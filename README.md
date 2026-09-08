@@ -128,6 +128,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Provider interface](docs/provider-interface.md)
 - [Provider activation runbook](docs/provider-activation.md)
 - [GitHub CI evidence integration](docs/github-ci-integration.md)
+- [GitHub App activation record](docs/github-app-activation.md)
 - [OIDC identity and authoritative merge confirmation](docs/identity-and-merge-confirmation.md)
 - [Phase 3 deployment boundary](deployment/README.md)
 - [Phase 3 acceptance record](docs/phase-3-acceptance.md)

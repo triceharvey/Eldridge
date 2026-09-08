@@ -1,6 +1,9 @@
 # Phase 3 Acceptance Record
 
-Phase 3 engineering is implemented locally. Operational acceptance remains a deliberate human-controlled activation step because the repository has no remote and no real shared environment, identity tenant, GitHub App installation, public DNS name, or hosted database.
+Phase 3 engineering is implemented locally. The private GitHub repository, hosted CI, and
+repository-scoped GitHub App are active and verified. Operational acceptance remains a
+deliberate human-controlled step because there is no real shared environment, identity tenant,
+public DNS name, protected private branch, or hosted database.
 
 ## Implemented evidence
 
@@ -13,6 +16,9 @@ Phase 3 engineering is implemented locally. Operational acceptance remains a del
 | Operations | Durable low-cardinality Prometheus exposition, separate monitoring credential, authorized aggregate JSON, and CSP-hardened dashboard |
 | Packaging | Digest-pinned Python base, separate non-root API/worker targets, read-only service filesystems, one-shot migrations, internal network, and automatic-TLS ingress model |
 | Portability | Operator policy mounts, hosted PostgreSQL URL, project-root mount, and immutable registry image inputs are configuration rather than baked credentials |
+
+The GitHub App registration, installation scope, permission record, credential boundary, and
+live read-only probe are recorded in `docs/github-app-activation.md`.
 
 ## Required activation evidence
 

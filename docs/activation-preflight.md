@@ -22,7 +22,7 @@ This checklist is the boundary between the locally verified implementation and e
 
 ## GitHub security activation
 
-- [ ] Install the least-authority GitHub App for the selected repository.
+- [x] Install and live-probe the least-authority GitHub App for only the selected repository.
 - [ ] Configure the webhook secret and deliver a signed test event.
 - [ ] Protect `main` from direct pushes and require exact-revision checks.
 - [ ] Configure the real OIDC issuer, audience, subject mapping, and operator roles.
