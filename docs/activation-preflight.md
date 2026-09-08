@@ -4,12 +4,15 @@ This checklist is the boundary between the locally verified implementation and e
 
 ## Repository activation
 
-- [x] Configure the repository-local Git author name and email.
+- [x] Configure the repository-local Git author name and GitHub `noreply` email.
 - [x] Review the staged initial source tree.
 - [x] Create the initial commit on `main`.
 - [x] Create `triceharvey/Eldridge` as a private GitHub repository.
 - [x] Authenticate GitHub CLI and add the selected repository as `origin`.
 - [x] Push `main` and preserve the first successful hosted CI run as evidence.
+- [x] Rewrite the private branch history and current refs to remove the original commit email.
+- [x] Verify the rewritten tree and commit count match the pre-rewrite repository.
+- [ ] Resolve GitHub's retained pre-rewrite commit object before public visibility.
 
 ## GitHub security activation
 
