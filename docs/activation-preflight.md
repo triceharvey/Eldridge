@@ -12,7 +12,9 @@ This checklist is the boundary between the locally verified implementation and e
 - [x] Push `main` and preserve the first successful hosted CI run as evidence.
 - [x] Rewrite the private branch history and current refs to remove the original commit email.
 - [x] Verify the rewritten tree and commit count match the pre-rewrite repository.
-- [ ] Resolve GitHub's retained pre-rewrite commit object before public visibility.
+- [x] Resolve GitHub's retained pre-rewrite commit object before public visibility by
+  recreating the private repository from the sanitized history and verifying the old root
+  commit is no longer reachable.
 - [x] Select and add the Apache License 2.0 before public visibility.
 
 ## GitHub security activation
