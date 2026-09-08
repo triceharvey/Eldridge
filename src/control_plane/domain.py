@@ -84,6 +84,10 @@ class Capability(StrEnum):
     ASSESS_MERGE_READINESS = "ASSESS_MERGE_READINESS"
     RECONCILE_GIT_OPERATION = "RECONCILE_GIT_OPERATION"
     CONFIRM_GIT_MERGE = "CONFIRM_GIT_MERGE"
+    MANAGE_DEPLOYMENT_ENVIRONMENTS = "MANAGE_DEPLOYMENT_ENVIRONMENTS"
+    CREATE_DEPLOYMENT_PLAN = "CREATE_DEPLOYMENT_PLAN"
+    EXECUTE_DEPLOYMENT = "EXECUTE_DEPLOYMENT"
+    READ_DEPLOYMENT = "READ_DEPLOYMENT"
 
 
 class ApprovalAction(StrEnum):
@@ -183,9 +187,15 @@ ROLE_CAPABILITIES: dict[AgentRole, frozenset[Capability]] = {
             Capability.ASSESS_MERGE_READINESS,
             Capability.RECONCILE_GIT_OPERATION,
             Capability.CONFIRM_GIT_MERGE,
+            Capability.MANAGE_DEPLOYMENT_ENVIRONMENTS,
+            Capability.CREATE_DEPLOYMENT_PLAN,
+            Capability.EXECUTE_DEPLOYMENT,
+            Capability.READ_DEPLOYMENT,
         }
     ),
-    AgentRole.AUDITOR: frozenset({Capability.READ_WORKFLOW, Capability.READ_AUDIT}),
+    AgentRole.AUDITOR: frozenset(
+        {Capability.READ_WORKFLOW, Capability.READ_AUDIT, Capability.READ_DEPLOYMENT}
+    ),
     AgentRole.IDE_INTEGRATION: frozenset(
         {
             Capability.CLAIM_IDE_TASK,

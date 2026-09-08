@@ -2,7 +2,8 @@
 
 ## Status and boundary
 
-This document proposes the Phase 4 design for owner approval. It does not authorize a cloud
+The project owner approved this Phase 4 design on 2026-09-08. That approval authorizes the
+provider-neutral implementation sequence; it does not authorize a cloud
 account, paid service, public endpoint, production credential, infrastructure change, or
 deployment. The first implementation target is a deterministic dry-run adapter, followed by
 one explicitly selected non-production environment.
@@ -134,6 +135,12 @@ Add environment, plan, attempt, verification, and rollback records; exact-bindin
 command APIs; deterministic plan hashing; a no-credential dry-run adapter; and negative tests.
 No external mutation occurs.
 
+Status: implemented locally. The API accepts only typed, artifact-bound operations; rejects
+production and external-target environment records; commits execution intent before invoking
+the adapter; consumes one exact, unexpired deployment approval; and records independent
+observation and verification evidence. The dry-run adapter cannot request credentials or
+contact an external target and does not move the workflow to `DEPLOYED`.
+
 ### Phase 4.2 — Short-lived identity boundary
 
 Add one credential-broker interface and a fake broker. Qualify one real workload-identity
@@ -152,7 +159,7 @@ the evidence and residual risk.
 
 ## Decisions still requiring owner approval
 
-1. Approve this provider-neutral Phase 4 architecture before Phase 4.1 implementation.
+1. The provider-neutral Phase 4 architecture was approved on 2026-09-08.
 2. Select the first non-production hosting target and cost ceiling before Phase 4.2.
 3. Select its workload-identity mechanism and maximum credential lifetime.
 4. Approve environment inventory, verification probes, and rollback policy before any real

@@ -1,7 +1,8 @@
 # ADR 0008: Controlled Deployment Boundary
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-08
+- Accepted by: project owner on 2026-09-08
 
 ## Context
 

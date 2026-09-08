@@ -12,6 +12,13 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from control_plane.audit import append_audit_event
+from control_plane.deployment import (
+    DeploymentAdapter,
+    DeploymentAttemptStatus,
+    DeploymentPlan,
+    DryRunDeploymentAdapter,
+    EnvironmentClassification,
+)
 from control_plane.domain import (
     TASK_CAPABILITY,
     TASK_ROLE,
@@ -51,6 +58,10 @@ from control_plane.persistence import (
     AuditEvent,
     CapabilityGrant,
     CiCheckEvidence,
+    DeploymentAttemptRecord,
+    DeploymentEnvironment,
+    DeploymentPlanRecord,
+    DeploymentVerificationRecord,
     ExecutionReconciliation,
     IdempotencyRecord,
     MergeConfirmationRecord,
@@ -170,6 +181,7 @@ class ControlPlaneService:
         repository_registry: RepositoryRegistry | None = None,
         provider_policy_version: str = "built-in/mock-v1",
         github_app: GitHubAppClient | None = None,
+        deployment_adapters: tuple[DeploymentAdapter, ...] | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider or MockProvider()
@@ -208,6 +220,13 @@ class ControlPlaneService:
         self.repository_registry = repository_registry
         self.provider_policy_version = provider_policy_version
         self.github_app = github_app
+        configured_adapters = deployment_adapters or (DryRunDeploymentAdapter(),)
+        if any(adapter.requires_credentials for adapter in configured_adapters):
+            raise ValueError("Phase 4.1 permits only no-credential deployment adapters")
+        adapter_ids = [adapter.adapter_id for adapter in configured_adapters]
+        if len(adapter_ids) != len(set(adapter_ids)):
+            raise ValueError("deployment adapter IDs must be unique")
+        self.deployment_adapters = {adapter.adapter_id: adapter for adapter in configured_adapters}
 
     def create_workflow(
         self,
@@ -832,6 +851,461 @@ class ControlPlaneService:
                 .order_by(MergeConfirmationRecord.created_at)
             ).all()
             return [self._merge_confirmation_dict(item) for item in records]
+
+    def register_deployment_environment(
+        self,
+        *,
+        actor_id: str,
+        environment_id: str,
+        name: str,
+        classification: EnvironmentClassification,
+        repository: str,
+        base_branch: str,
+        resource_scope: tuple[str, ...],
+        required_checks: tuple[str, ...],
+        required_attestations: tuple[str, ...],
+        verification_policy: tuple[str, ...],
+        rollback_policy: str,
+        policy_version: str,
+        provider: str = "dry-run",
+        account_scope: str = "none",
+        region: str = "none",
+        adapter_id: str = "dry-run-v1",
+    ) -> dict[str, Any]:
+        values = {
+            "environment_id": environment_id.strip(),
+            "name": name.strip(),
+            "classification": classification.value,
+            "provider": provider.strip(),
+            "account_scope": account_scope.strip(),
+            "region": region.strip(),
+            "resource_scope": sorted(set(resource_scope)),
+            "adapter_id": adapter_id.strip(),
+            "policy_version": policy_version.strip(),
+            "repository": repository.strip(),
+            "base_branch": base_branch.strip(),
+            "required_checks": sorted(set(required_checks)),
+            "required_attestations": sorted(set(required_attestations)),
+            "verification_policy": list(verification_policy),
+            "rollback_policy": rollback_policy.strip(),
+        }
+        if not all(
+            values[key]
+            for key in (
+                "environment_id",
+                "name",
+                "repository",
+                "base_branch",
+                "policy_version",
+                "rollback_policy",
+            )
+        ):
+            raise ValidationError("complete deployment environment policy is required")
+        if (
+            len(environment_id) > 128
+            or len(name) > 200
+            or len(repository) > 500
+            or len(base_branch) > 200
+            or len(policy_version) > 64
+            or len(rollback_policy) > 256
+            or any(
+                character not in "abcdefghijklmnopqrstuvwxyz0123456789._-"
+                for character in environment_id
+            )
+        ):
+            raise ValidationError("deployment environment policy exceeds its boundary")
+        collections = (
+            resource_scope,
+            required_checks,
+            required_attestations,
+            verification_policy,
+        )
+        if any(
+            len(items) > 100 or any(not item.strip() or len(item) > 256 for item in items)
+            for items in collections
+        ):
+            raise ValidationError("deployment environment collection is invalid")
+        if len(resource_scope) != len(set(resource_scope)):
+            raise ValidationError("deployment resource scope contains duplicates")
+        if len(required_checks) != len(set(required_checks)) or len(required_attestations) != len(
+            set(required_attestations)
+        ):
+            raise ValidationError("deployment environment requirements contain duplicates")
+        if len(verification_policy) != len(set(verification_policy)):
+            raise ValidationError("deployment verification policy contains duplicates")
+        if classification is EnvironmentClassification.PRODUCTION:
+            raise AuthorizationError("Phase 4.1 does not permit production environments")
+        adapter = self.deployment_adapters.get(adapter_id)
+        if adapter is None or adapter.requires_credentials:
+            raise AuthorizationError("deployment adapter is not approved for Phase 4.1")
+        if provider != "dry-run" or account_scope != "none" or region != "none":
+            raise AuthorizationError("Phase 4.1 environment must have no external target")
+        config_digest = self._digest(values)
+        with self.session_factory() as session, session.begin():
+            self.policy.authorize(
+                session,
+                actor_id,
+                Capability.MANAGE_DEPLOYMENT_ENVIRONMENTS,
+                require_human=True,
+            )
+            existing = session.get(DeploymentEnvironment, environment_id)
+            if existing is not None:
+                if existing.config_digest != config_digest:
+                    raise ConflictError("deployment environment ID is already bound")
+                return self._deployment_environment_dict(existing)
+            environment = DeploymentEnvironment(
+                id=values["environment_id"],
+                name=values["name"],
+                classification=values["classification"],
+                provider=values["provider"],
+                account_scope=values["account_scope"],
+                region=values["region"],
+                resource_scope=values["resource_scope"],
+                adapter_id=values["adapter_id"],
+                policy_version=values["policy_version"],
+                repository=values["repository"],
+                base_branch=values["base_branch"],
+                required_checks=values["required_checks"],
+                required_attestations=values["required_attestations"],
+                verification_policy=values["verification_policy"],
+                rollback_policy=values["rollback_policy"],
+                config_digest=config_digest,
+                active=True,
+                created_by=actor_id,
+            )
+            session.add(environment)
+            session.flush()
+            return self._deployment_environment_dict(environment)
+
+    def list_deployment_environments(self, *, principal_id: str) -> list[dict[str, Any]]:
+        with self.session_factory() as session:
+            self.policy.authorize(session, principal_id, Capability.READ_DEPLOYMENT)
+            environments = session.scalars(
+                select(DeploymentEnvironment).order_by(DeploymentEnvironment.id)
+            ).all()
+            return [self._deployment_environment_dict(item) for item in environments]
+
+    def create_deployment_plan(
+        self,
+        *,
+        workflow_id: str,
+        actor_id: str,
+        environment_id: str,
+        artifact_digests: tuple[str, ...],
+        operations: tuple[dict[str, Any], ...],
+        declared_impact: str,
+        verification_probes: tuple[str, ...],
+        rollback_reference: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        if (
+            not idempotency_key.strip()
+            or not declared_impact.strip()
+            or not rollback_reference.strip()
+        ):
+            raise ValidationError("deployment plan intent, rollback, and idempotency are required")
+        if (
+            len(idempotency_key) > 128
+            or len(declared_impact) > 4_000
+            or len(rollback_reference) > 256
+            or len(artifact_digests) > 100
+            or len(operations) > 100
+            or len(verification_probes) > 100
+            or any(not probe.strip() or len(probe) > 256 for probe in verification_probes)
+        ):
+            raise ValidationError("deployment plan exceeds its boundary")
+        if not artifact_digests or len(artifact_digests) != len(set(artifact_digests)):
+            raise ValidationError("deployment plan requires unique artifact digests")
+        if not operations or not verification_probes:
+            raise ValidationError("deployment operations and verification probes are required")
+        if any(not self._is_sha256_digest(item) for item in artifact_digests):
+            raise ValidationError("artifact digests must use sha256:<64 lowercase hex>")
+        with self.session_factory() as session, session.begin():
+            self.policy.authorize(
+                session, actor_id, Capability.CREATE_DEPLOYMENT_PLAN, require_human=True
+            )
+            workflow = self._get_workflow(session, workflow_id, lock=True)
+            existing = session.scalar(
+                select(DeploymentPlanRecord).where(
+                    DeploymentPlanRecord.actor_id == actor_id,
+                    DeploymentPlanRecord.idempotency_key == idempotency_key,
+                )
+            )
+            environment = session.get(DeploymentEnvironment, environment_id)
+            if environment is None or not environment.active:
+                raise NotFoundError("active deployment environment not found")
+            revision = workflow.merged_revision
+            request_payload = {
+                "workflow_id": workflow_id,
+                "environment_id": environment_id,
+                "environment_config_digest": environment.config_digest,
+                "revision": revision,
+                "artifact_digests": sorted(artifact_digests),
+                "operations": list(operations),
+                "declared_impact": declared_impact.strip(),
+                "verification_probes": list(verification_probes),
+                "rollback_reference": rollback_reference.strip(),
+                "policy_version": environment.policy_version,
+            }
+            request_digest = self._digest(request_payload)
+            if existing is not None:
+                if existing.request_digest != request_digest:
+                    raise ConflictError("deployment-plan idempotency key was reused")
+                return self._deployment_plan_dict(existing)
+            if WorkflowState(workflow.state) is not WorkflowState.MERGED:
+                raise InvalidTransitionError("workflow is not ready for a deployment plan")
+            if not revision:
+                raise ConflictError("workflow lacks an independently confirmed merge revision")
+            if workflow.repository_scope != environment.repository:
+                raise ConflictError("deployment environment repository does not match workflow")
+            operation_resources = {
+                str(operation.get("resource_id", "")).strip() for operation in operations
+            }
+            if not operation_resources.issubset(set(environment.resource_scope)):
+                raise AuthorizationError("deployment operation exceeds environment resource scope")
+            if not set(verification_probes).issubset(set(environment.verification_policy)):
+                raise AuthorizationError("deployment probe exceeds environment verification policy")
+            if rollback_reference.strip() != environment.rollback_policy:
+                raise ConflictError(
+                    "deployment rollback reference does not match environment policy"
+                )
+            plan_id = str(uuid4())
+            plan_digest = self._digest(request_payload)
+            plan = DeploymentPlan(
+                plan_id=plan_id,
+                workflow_id=workflow_id,
+                environment_id=environment_id,
+                revision=revision,
+                artifact_digests=tuple(sorted(artifact_digests)),
+                operations=operations,
+                verification_probes=verification_probes,
+                rollback_reference=rollback_reference.strip(),
+                policy_version=environment.policy_version,
+                digest=plan_digest,
+            )
+            adapter = self.deployment_adapters.get(environment.adapter_id)
+            if adapter is None:
+                raise AuthorizationError("deployment environment adapter is disabled")
+            adapter.validate_plan(plan)
+            record = DeploymentPlanRecord(
+                id=plan_id,
+                workflow_id=workflow_id,
+                environment_id=environment_id,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+                revision=revision,
+                artifact_digests=list(plan.artifact_digests),
+                operations=list(operations),
+                declared_impact=declared_impact.strip(),
+                verification_probes=list(verification_probes),
+                rollback_reference=rollback_reference.strip(),
+                policy_version=environment.policy_version,
+                digest=plan_digest,
+            )
+            session.add(record)
+            self._transition(
+                session,
+                workflow,
+                WorkflowState.AWAITING_DEPLOYMENT_APPROVAL,
+                actor_id=actor_id,
+                reason="immutable deployment plan created for confirmed merge revision",
+                extra={
+                    "deployment_plan_id": plan_id,
+                    "environment_id": environment_id,
+                    "plan_digest": plan_digest,
+                    "revision": revision,
+                    "simulated": True,
+                },
+            )
+            session.flush()
+            return self._deployment_plan_dict(record)
+
+    def list_deployment_plans(self, workflow_id: str, *, principal_id: str) -> list[dict[str, Any]]:
+        with self.session_factory() as session:
+            self.policy.authorize(session, principal_id, Capability.READ_DEPLOYMENT)
+            self._get_workflow(session, workflow_id)
+            records = session.scalars(
+                select(DeploymentPlanRecord)
+                .where(DeploymentPlanRecord.workflow_id == workflow_id)
+                .order_by(DeploymentPlanRecord.created_at)
+            ).all()
+            return [self._deployment_plan_dict(item) for item in records]
+
+    def execute_deployment_dry_run(
+        self,
+        *,
+        workflow_id: str,
+        plan_id: str,
+        actor_id: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        request_digest = self._digest(
+            {"workflow_id": workflow_id, "plan_id": plan_id, "mode": "DRY_RUN"}
+        )
+        with self.session_factory() as session, session.begin():
+            self.policy.authorize(
+                session, actor_id, Capability.EXECUTE_DEPLOYMENT, require_human=True
+            )
+            workflow = self._get_workflow(session, workflow_id, lock=True)
+            existing = session.scalar(
+                select(DeploymentAttemptRecord).where(
+                    DeploymentAttemptRecord.actor_id == actor_id,
+                    DeploymentAttemptRecord.idempotency_key == idempotency_key,
+                )
+            )
+            if existing is not None:
+                if existing.request_digest != request_digest:
+                    raise ConflictError("deployment idempotency key was reused")
+                if existing.status == DeploymentAttemptStatus.SUCCEEDED.value:
+                    return self._deployment_attempt_dict(existing)
+                raise ConflictError("deployment attempt is not replayable")
+            if WorkflowState(workflow.state) is not WorkflowState.AWAITING_DEPLOYMENT_APPROVAL:
+                raise InvalidTransitionError("workflow is not awaiting deployment approval")
+            plan_record = session.get(DeploymentPlanRecord, plan_id)
+            if plan_record is None or plan_record.workflow_id != workflow_id:
+                raise NotFoundError("deployment plan not found")
+            environment = session.get(DeploymentEnvironment, plan_record.environment_id)
+            if environment is None or not environment.active:
+                raise ConflictError("deployment environment is unavailable")
+            adapter = self.deployment_adapters.get(environment.adapter_id)
+            if adapter is None or adapter.requires_credentials:
+                raise AuthorizationError("only the no-credential dry-run adapter is permitted")
+            approval = session.scalar(
+                select(Approval)
+                .where(
+                    Approval.workflow_id == workflow_id,
+                    Approval.action == ApprovalAction.DEPLOY.value,
+                    Approval.decision == ApprovalDecision.APPROVED.value,
+                    Approval.environment_id == environment.id,
+                    Approval.plan_digest == plan_record.digest,
+                    Approval.revision == plan_record.revision,
+                    Approval.policy_version == plan_record.policy_version,
+                    Approval.consumed_at.is_(None),
+                )
+                .order_by(Approval.created_at.desc())
+                .limit(1)
+            )
+            if approval is None:
+                raise AuthorizationError("exact unconsumed deployment approval is required")
+            if self._as_utc(approval.expires_at) <= datetime.now(UTC):
+                raise AuthorizationError("deployment approval has expired")
+            plan = self._deployment_plan_value(plan_record)
+            adapter.validate_plan(plan)
+            attempt = DeploymentAttemptRecord(
+                workflow_id=workflow_id,
+                plan_id=plan_id,
+                approval_id=approval.id,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+                adapter_id=adapter.adapter_id,
+                status=DeploymentAttemptStatus.RUNNING.value,
+                simulated=True,
+                result_json={"intent_committed": True, "credential_requested": False},
+            )
+            session.add(attempt)
+            session.flush()
+            approval.consumed_at = datetime.now(UTC)
+            attempt_id = attempt.id
+            append_audit_event(
+                session,
+                workflow_id=workflow_id,
+                event_type="deployment.dry_run_started",
+                actor_id=actor_id,
+                resource_type="deployment_attempt",
+                resource_id=attempt_id,
+                outcome="STARTED",
+                payload={
+                    "plan_id": plan_id,
+                    "plan_digest": plan.digest,
+                    "environment_id": plan.environment_id,
+                    "revision": plan.revision,
+                    "approval_id": approval.id,
+                    "credential_requested": False,
+                },
+            )
+        try:
+            execution = adapter.execute(plan, idempotency_key=attempt_id)
+            observation = adapter.observe(plan, execution)
+            verification = adapter.verify(plan, observation)
+        except Exception as exc:
+            self._fail_deployment_dry_run(attempt_id, type(exc).__name__)
+            raise
+        with self.session_factory() as session, session.begin():
+            finalized_attempt = session.get(
+                DeploymentAttemptRecord, attempt_id, with_for_update=True
+            )
+            if (
+                finalized_attempt is None
+                or finalized_attempt.status != DeploymentAttemptStatus.RUNNING.value
+            ):
+                raise ConflictError("deployment attempt is no longer running")
+            workflow = self._get_workflow(session, workflow_id, lock=True)
+            finalized_attempt.operation_reference = execution.operation_reference
+            finalized_attempt.simulated = execution.simulated
+            finalized_attempt.result_json = {
+                "execution": execution.evidence,
+                "observation": observation.evidence,
+                "changed": execution.changed,
+            }
+            finalized_attempt.completed_at = datetime.now(UTC)
+            status = (
+                DeploymentAttemptStatus.SUCCEEDED
+                if verification.passed and not execution.changed and execution.simulated
+                else DeploymentAttemptStatus.ROLLBACK_REQUIRED
+            )
+            finalized_attempt.status = status.value
+            session.add(
+                DeploymentVerificationRecord(
+                    workflow_id=workflow_id,
+                    attempt_id=finalized_attempt.id,
+                    passed=verification.passed,
+                    observed_revision=verification.observed_revision,
+                    evidence=verification.evidence,
+                )
+            )
+            if status is DeploymentAttemptStatus.ROLLBACK_REQUIRED:
+                self._transition(
+                    session,
+                    workflow,
+                    WorkflowState.ROLLBACK_REQUIRED,
+                    actor_id="orchestrator",
+                    reason="deployment dry-run evidence violated its no-change invariant",
+                    extra={"deployment_attempt_id": finalized_attempt.id},
+                )
+            append_audit_event(
+                session,
+                workflow_id=workflow_id,
+                event_type="deployment.dry_run_completed",
+                actor_id="orchestrator",
+                resource_type="deployment_attempt",
+                resource_id=finalized_attempt.id,
+                outcome=status.value,
+                payload={
+                    "plan_digest": plan.digest,
+                    "revision": plan.revision,
+                    "verification_passed": verification.passed,
+                    "simulated": execution.simulated,
+                    "changed": execution.changed,
+                    "credential_requested": False,
+                },
+            )
+            session.flush()
+            return self._deployment_attempt_dict(finalized_attempt)
+
+    def list_deployment_attempts(
+        self, workflow_id: str, *, principal_id: str
+    ) -> list[dict[str, Any]]:
+        with self.session_factory() as session:
+            self.policy.authorize(session, principal_id, Capability.READ_DEPLOYMENT)
+            self._get_workflow(session, workflow_id)
+            records = session.scalars(
+                select(DeploymentAttemptRecord)
+                .where(DeploymentAttemptRecord.workflow_id == workflow_id)
+                .order_by(DeploymentAttemptRecord.started_at)
+            ).all()
+            return [self._deployment_attempt_dict(item) for item in records]
 
     def operational_snapshot(self, *, principal_id: str | None = None) -> dict[str, Any]:
         now = datetime.now(UTC)
@@ -1931,6 +2405,8 @@ class ControlPlaneService:
         decision: ApprovalDecision,
         rationale: str,
         expires_in_minutes: int = 15,
+        environment_id: str | None = None,
+        plan_digest: str | None = None,
     ) -> dict[str, Any]:
         capability = (
             Capability.APPROVE_MERGE
@@ -1942,20 +2418,45 @@ class ControlPlaneService:
         with self.session_factory() as session, session.begin():
             self.policy.authorize(session, approver_id, capability, require_human=True)
             workflow = self._get_workflow(session, workflow_id, lock=True)
-            if action != ApprovalAction.MERGE:
-                raise AuthorizationError("deployment approval is outside the Phase 1 boundary")
-            if WorkflowState(workflow.state) != WorkflowState.AWAITING_HUMAN_APPROVAL:
-                raise InvalidTransitionError("workflow is not awaiting merge approval")
-            if not workflow.candidate_revision or revision != workflow.candidate_revision:
-                raise ConflictError("approval revision does not match the candidate revision")
             if not target.strip() or not rationale.strip():
                 raise ValidationError("approval target and rationale are required")
+            if action is ApprovalAction.MERGE:
+                if environment_id is not None or plan_digest is not None:
+                    raise ValidationError("merge approval cannot include deployment bindings")
+                if WorkflowState(workflow.state) != WorkflowState.AWAITING_HUMAN_APPROVAL:
+                    raise InvalidTransitionError("workflow is not awaiting merge approval")
+                if not workflow.candidate_revision or revision != workflow.candidate_revision:
+                    raise ConflictError("approval revision does not match the candidate revision")
+                policy_version = workflow.policy_version
+            else:
+                if WorkflowState(workflow.state) != WorkflowState.AWAITING_DEPLOYMENT_APPROVAL:
+                    raise InvalidTransitionError("workflow is not awaiting deployment approval")
+                if not environment_id or not plan_digest:
+                    raise ValidationError(
+                        "deployment approval requires environment and plan digest"
+                    )
+                plan = session.scalar(
+                    select(DeploymentPlanRecord).where(
+                        DeploymentPlanRecord.workflow_id == workflow_id,
+                        DeploymentPlanRecord.environment_id == environment_id,
+                        DeploymentPlanRecord.digest == plan_digest,
+                    )
+                )
+                if plan is None:
+                    raise ConflictError("deployment approval does not match an immutable plan")
+                if target.strip() != environment_id:
+                    raise ConflictError("deployment target must equal the environment ID")
+                if revision != plan.revision or revision != workflow.merged_revision:
+                    raise ConflictError("deployment approval revision is stale")
+                policy_version = plan.policy_version
             approval = Approval(
                 workflow_id=workflow.id,
                 action=action.value,
                 target=target.strip(),
                 revision=revision,
-                policy_version=workflow.policy_version,
+                policy_version=policy_version,
+                environment_id=environment_id,
+                plan_digest=plan_digest,
                 approver_id=approver_id,
                 decision=decision.value,
                 rationale=rationale.strip(),
@@ -1963,20 +2464,40 @@ class ControlPlaneService:
             )
             session.add(approval)
             session.flush()
-            approval.consumed_at = datetime.now(UTC)
-            target_state = (
-                WorkflowState.APPROVED
-                if decision == ApprovalDecision.APPROVED
-                else WorkflowState.REJECTED
-            )
-            self._transition(
-                session,
-                workflow,
-                target_state,
-                actor_id=approver_id,
-                reason=f"human {decision.value.lower()} {action.value.lower()} for exact revision",
-                extra={"approval_id": approval.id, "revision": revision, "target": target},
-            )
+            if action is ApprovalAction.MERGE or decision is ApprovalDecision.REJECTED:
+                approval.consumed_at = datetime.now(UTC)
+                target_state = (
+                    WorkflowState.APPROVED
+                    if decision is ApprovalDecision.APPROVED
+                    else WorkflowState.REJECTED
+                )
+                self._transition(
+                    session,
+                    workflow,
+                    target_state,
+                    actor_id=approver_id,
+                    reason=(
+                        f"human {decision.value.lower()} {action.value.lower()} for exact revision"
+                    ),
+                    extra={"approval_id": approval.id, "revision": revision, "target": target},
+                )
+            else:
+                append_audit_event(
+                    session,
+                    workflow_id=workflow.id,
+                    event_type="deployment.approved",
+                    actor_id=approver_id,
+                    resource_type="approval",
+                    resource_id=approval.id,
+                    outcome="APPROVED",
+                    payload={
+                        "environment_id": environment_id,
+                        "plan_digest": plan_digest,
+                        "revision": revision,
+                        "policy_version": policy_version,
+                        "expires_at": approval.expires_at.isoformat(),
+                    },
+                )
             session.flush()
             return self._approval_dict(approval)
 
@@ -2333,6 +2854,7 @@ class ControlPlaneService:
             "requester_id": workflow.requester_id,
             "policy_version": workflow.policy_version,
             "candidate_revision": workflow.candidate_revision,
+            "merged_revision": workflow.merged_revision,
             "tasks": [cls._task_dict(task) for task in workflow.tasks],
             "created_at": workflow.created_at.isoformat(),
             "updated_at": workflow.updated_at.isoformat(),
@@ -2545,6 +3067,7 @@ class ControlPlaneService:
             record.status = "SUCCEEDED"
             record.merge_commit_revision = result.merge_commit_revision
             record.completed_at = datetime.now(UTC)
+            workflow.merged_revision = result.merge_commit_revision
             self._transition(
                 session,
                 workflow,
@@ -2592,6 +3115,123 @@ class ControlPlaneService:
                 outcome="FAILED",
                 payload={"revision": record.revision, "error_code": record.error_code},
             )
+
+    def _fail_deployment_dry_run(self, attempt_id: str, error_code: str) -> None:
+        with self.session_factory() as session, session.begin():
+            attempt = session.get(DeploymentAttemptRecord, attempt_id, with_for_update=True)
+            if attempt is None or attempt.status != DeploymentAttemptStatus.RUNNING.value:
+                return
+            attempt.status = DeploymentAttemptStatus.FAILED.value
+            attempt.error_code = error_code[:64]
+            attempt.completed_at = datetime.now(UTC)
+            attempt.result_json = {
+                "credential_requested": False,
+                "external_target_contacted": False,
+                "error": "dry-run adapter failed before any target change",
+            }
+            append_audit_event(
+                session,
+                workflow_id=attempt.workflow_id,
+                event_type="deployment.dry_run_failed",
+                actor_id="orchestrator",
+                resource_type="deployment_attempt",
+                resource_id=attempt.id,
+                outcome="FAILED",
+                payload={
+                    "error_code": attempt.error_code,
+                    "credential_requested": False,
+                    "external_target_contacted": False,
+                },
+            )
+
+    @staticmethod
+    def _deployment_plan_value(record: DeploymentPlanRecord) -> DeploymentPlan:
+        return DeploymentPlan(
+            plan_id=record.id,
+            workflow_id=record.workflow_id,
+            environment_id=record.environment_id,
+            revision=record.revision,
+            artifact_digests=tuple(record.artifact_digests),
+            operations=tuple(record.operations),
+            verification_probes=tuple(record.verification_probes),
+            rollback_reference=record.rollback_reference,
+            policy_version=record.policy_version,
+            digest=record.digest,
+        )
+
+    @staticmethod
+    def _deployment_environment_dict(record: DeploymentEnvironment) -> dict[str, Any]:
+        return {
+            "id": record.id,
+            "name": record.name,
+            "classification": record.classification,
+            "provider": record.provider,
+            "account_scope": record.account_scope,
+            "region": record.region,
+            "resource_scope": record.resource_scope,
+            "adapter_id": record.adapter_id,
+            "policy_version": record.policy_version,
+            "repository": record.repository,
+            "base_branch": record.base_branch,
+            "required_checks": record.required_checks,
+            "required_attestations": record.required_attestations,
+            "verification_policy": record.verification_policy,
+            "rollback_policy": record.rollback_policy,
+            "config_digest": record.config_digest,
+            "active": record.active,
+            "created_by": record.created_by,
+            "created_at": record.created_at.isoformat(),
+        }
+
+    @staticmethod
+    def _deployment_plan_dict(record: DeploymentPlanRecord) -> dict[str, Any]:
+        return {
+            "id": record.id,
+            "workflow_id": record.workflow_id,
+            "environment_id": record.environment_id,
+            "revision": record.revision,
+            "artifact_digests": record.artifact_digests,
+            "operations": record.operations,
+            "declared_impact": record.declared_impact,
+            "verification_probes": record.verification_probes,
+            "rollback_reference": record.rollback_reference,
+            "policy_version": record.policy_version,
+            "digest": record.digest,
+            "created_at": record.created_at.isoformat(),
+        }
+
+    @staticmethod
+    def _deployment_attempt_dict(record: DeploymentAttemptRecord) -> dict[str, Any]:
+        return {
+            "id": record.id,
+            "workflow_id": record.workflow_id,
+            "plan_id": record.plan_id,
+            "approval_id": record.approval_id,
+            "adapter_id": record.adapter_id,
+            "status": record.status,
+            "operation_reference": record.operation_reference,
+            "simulated": record.simulated,
+            "result": record.result_json,
+            "error_code": record.error_code,
+            "started_at": record.started_at.isoformat(),
+            "completed_at": record.completed_at.isoformat() if record.completed_at else None,
+        }
+
+    @staticmethod
+    def _is_sha256_digest(value: str) -> bool:
+        suffix = value.removeprefix("sha256:")
+        return (
+            value.startswith("sha256:")
+            and len(suffix) == 64
+            and suffix == suffix.lower()
+            and set(suffix) <= set("0123456789abcdef")
+        )
+
+    @staticmethod
+    def _as_utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     @staticmethod
     def _pull_request_record_dict(record: PullRequestProposalRecord) -> dict[str, Any]:
@@ -2651,8 +3291,11 @@ class ControlPlaneService:
             "target": approval.target,
             "revision": approval.revision,
             "policy_version": approval.policy_version,
+            "environment_id": approval.environment_id,
+            "plan_digest": approval.plan_digest,
             "approver_id": approval.approver_id,
             "decision": approval.decision,
             "rationale": approval.rationale,
             "expires_at": approval.expires_at.isoformat(),
+            "consumed_at": approval.consumed_at.isoformat() if approval.consumed_at else None,
         }

@@ -3,13 +3,13 @@
 [![CI](https://github.com/triceharvey/Eldridge/actions/workflows/ci.yml/badge.svg)](https://github.com/triceharvey/Eldridge/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB.svg)](https://www.python.org/)
 
-**Status:** private validation and public-launch hardening. The control plane is not yet a
+**Status:** Phase 4 controlled-deployment implementation and private validation. The control plane is not yet a
 hosted service, and all commercial providers and privileged integrations remain disabled by
 default.
 
 This repository defines a production-minded control plane for coordinating specialized AI engineering agents under explicit policy, isolation, audit, and human approval. The system is not a group chat for models. It is a workflow engine in which agents are treated as untrusted, non-human service identities and deterministic controls outrank model recommendations.
 
-The repository has completed **Phase 0** and the **Phase 1 deterministic control-plane skeleton** approved on 2026-09-06. Phase 2 engineering controls are complete locally except for explicitly approved paid-provider canaries. Phase 3 engineering is locally complete: revision-bound GitHub CI evidence, draft PR proposals, independent merge-readiness assessment, OIDC-backed production identity, read-only post-merge confirmation, durable Prometheus metrics, an authenticated dashboard, and TLS-ready container packaging. Environment-specific hosted activation evidence remains pending. The system cannot execute a merge, deploy, access production secrets, or contact an external provider by default.
+The repository has completed **Phase 0** and the **Phase 1 deterministic control-plane skeleton** approved on 2026-09-06. Phase 2 engineering controls are complete locally except for explicitly approved paid-provider canaries. Phase 3 engineering is locally complete: revision-bound GitHub CI evidence, draft PR proposals, independent merge-readiness assessment, OIDC-backed production identity, read-only post-merge confirmation, durable Prometheus metrics, an authenticated dashboard, and TLS-ready container packaging. Phase 4.1 now adds immutable deployment environments and plans, exact expiring deployment approvals, durable attempts and verification evidence, and a deterministic no-credential dry-run adapter. Environment-specific hosted activation evidence remains pending. The system cannot execute a merge, perform a real deployment, access production secrets, or contact an external model provider by default.
 
 The worker composes an operator-registered repository, per-task Git worktree, typed model tool proposals, and the hardened Docker executor. Successful task-branch commits are bound to the real Git revision. Provider and executor calls occur outside database transactions under renewable leases; expired running work blocks for explicit human reconciliation, and late results are rejected. External provider activation remains an explicit human decision.
 
@@ -72,6 +72,21 @@ The current implementation provides:
 - hash-chained structured audit events and revision-bound artifacts; and
 - unit, API, policy, failure, provider, audit, and PostgreSQL integration tests.
 
+## Phase 4.1 controlled-deployment foundation
+
+The approved Phase 4.1 slice provides:
+
+- operator-owned immutable development or staging environment records;
+- deterministic SHA-256 deployment plans bound to a confirmed merge revision and artifact digests;
+- typed deployment operations with no shell or arbitrary provider request surface;
+- a separate, expiring human `DEPLOY` approval bound to environment, revision, plan digest, and policy version;
+- execution intent committed before adapter invocation and one-time approval consumption;
+- durable deployment attempts and independent verification records; and
+- a dry-run adapter that is structurally prohibited from requesting credentials or contacting a target.
+
+Production environments and credential-requiring adapters fail closed in Phase 4.1. A successful
+dry run proves orchestration and policy behavior but never marks a workflow `DEPLOYED`.
+
 ## Run locally
 
 Create an isolated Python environment and install the project:
@@ -133,6 +148,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 3 deployment boundary](deployment/README.md)
 - [Phase 3 acceptance record](docs/phase-3-acceptance.md)
 - [Phase 4 controlled deployment design](docs/phase-4-deployment-design.md)
+- [Phase 4.1 acceptance record](docs/phase-4-1-acceptance.md)
 - [Onboarding other projects](docs/project-onboarding.md)
 - [Proposed data model](docs/data-model.md)
 - [Threat model](docs/threat-model.md)

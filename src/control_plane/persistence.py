@@ -70,6 +70,7 @@ class Workflow(Base):
     requester_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
     policy_version: Mapped[str] = mapped_column(String(64), nullable=False, default="phase1-v1")
     candidate_revision: Mapped[str | None] = mapped_column(String(128))
+    merged_revision: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -281,11 +282,111 @@ class Approval(Base):
     target: Mapped[str] = mapped_column(String(500), nullable=False)
     revision: Mapped[str] = mapped_column(String(128), nullable=False)
     policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    environment_id: Mapped[str | None] = mapped_column(String(128))
+    plan_digest: Mapped[str | None] = mapped_column(String(64))
     approver_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DeploymentEnvironment(Base):
+    __tablename__ = "deployment_environments"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    classification: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    account_scope: Mapped[str] = mapped_column(String(256), nullable=False)
+    region: Mapped[str] = mapped_column(String(128), nullable=False)
+    resource_scope: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    adapter_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    repository: Mapped[str] = mapped_column(String(500), nullable=False)
+    base_branch: Mapped[str] = mapped_column(String(200), nullable=False)
+    required_checks: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    required_attestations: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    verification_policy: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    rollback_policy: Mapped[str] = mapped_column(String(256), nullable=False)
+    config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DeploymentPlanRecord(Base):
+    __tablename__ = "deployment_plans"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_deployment_plan_actor_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), index=True)
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("deployment_environments.id"), index=True
+    )
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    artifact_digests: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    operations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    declared_impact: Mapped[str] = mapped_column(Text, nullable=False)
+    verification_probes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    rollback_reference: Mapped[str] = mapped_column(String(256), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DeploymentAttemptRecord(Base):
+    __tablename__ = "deployment_attempts"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_deployment_attempt_actor_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), index=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("deployment_plans.id"), index=True)
+    approval_id: Mapped[str] = mapped_column(ForeignKey("approvals.id"), index=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    adapter_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    operation_reference: Mapped[str | None] = mapped_column(String(256))
+    simulated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    result_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DeploymentVerificationRecord(Base):
+    __tablename__ = "deployment_verifications"
+    __table_args__ = (UniqueConstraint("attempt_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), index=True)
+    attempt_id: Mapped[str] = mapped_column(ForeignKey("deployment_attempts.id"), index=True)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    observed_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DeploymentRollbackRecord(Base):
+    __tablename__ = "deployment_rollbacks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), index=True)
+    attempt_id: Mapped[str] = mapped_column(ForeignKey("deployment_attempts.id"), index=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

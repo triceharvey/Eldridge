@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-engineering-control-plane"
-version = "0.3.0"
+version = "0.4.0"
 description = "A policy-controlled, auditable orchestration plane for specialized AI engineering agents"
 readme = "README.md"
 license = "Apache-2.0"

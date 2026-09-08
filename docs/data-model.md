@@ -24,6 +24,12 @@ erDiagram
     TASK ||--o{ AUDIT_EVENT : concerns
     POLICY_VERSION ||--o{ CAPABILITY_GRANT : governs
     POLICY_VERSION ||--o{ APPROVAL : governs
+    DEPLOYMENT_ENVIRONMENT ||--o{ DEPLOYMENT_PLAN : targets
+    WORKFLOW ||--o{ DEPLOYMENT_PLAN : proposes
+    DEPLOYMENT_PLAN ||--o{ DEPLOYMENT_ATTEMPT : executes
+    APPROVAL ||--o| DEPLOYMENT_ATTEMPT : authorizes
+    DEPLOYMENT_ATTEMPT ||--o| DEPLOYMENT_VERIFICATION : verifies
+    DEPLOYMENT_ATTEMPT ||--o{ DEPLOYMENT_ROLLBACK : governs
 ```
 
 ## Core entities
@@ -47,6 +53,11 @@ erDiagram
 | `artifact` | attempt, type, URI/reference, digest, size, media type, classification, revision | Validated output/evidence metadata |
 | `finding` | attempt, category, severity, status, evidence, affected digest, disposition | Review/security issue tracked to closure |
 | `approval` | workflow, action, target, revision/digest, policy, human principal, decision, rationale, expiry, consumed time; immutable | Scoped human authorization; unique active approval rules |
+| `deployment_environment` | immutable ID, classification, provider/account/region scopes, adapter and policy versions, repository/branch, requirements, verification and rollback policies, active state | Operator-owned allowlist; repository or model content cannot widen it |
+| `deployment_plan` | workflow, environment, confirmed merge revision, artifact digests, typed operations, impact, probes, rollback reference, policy, canonical digest | Immutable content-addressed deployment proposal |
+| `deployment_attempt` | plan, exact approval, actor/idempotency key, adapter, status, operation reference, sanitized result, timestamps | Durable execution intent and outcome without credential material |
+| `deployment_verification` | unique attempt, pass/fail, observed revision, structured evidence | Independent post-execution result binding |
+| `deployment_rollback` | attempt, human decision, rationale, evidence | Durable recovery decision record for later recovery slices |
 | `audit_event` | global ID, workflow sequence, prior hash, body hash, actor/action/resource/outcome, correlations, schema version | Append-only security and operational record |
 | `policy_version` | ID, digest, effective time, status, source revision | Binds decisions and evidence to the policy used |
 | `idempotency_record` | principal, endpoint/command, key, request digest, response reference, expiry | Prevents duplicate commands from retries |

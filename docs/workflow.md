@@ -51,6 +51,10 @@ stateDiagram-v2
 
 `FAILED` and `ROLLBACK_REQUIRED` are exceptional states omitted from the main diagram for readability. A non-retryable failure from any active execution stage enters `FAILED`. A deployment that completes but fails verification enters `ROLLBACK_REQUIRED`, never directly `FAILED`, because the system may already have changed.
 
+Phase 4.1 exercises this boundary with a no-credential dry-run adapter. A successful simulation
+records an attempt and verification but remains in `AWAITING_DEPLOYMENT_APPROVAL`; only a later
+approved adapter that can prove an actual target revision and health may enter `DEPLOYED`.
+
 ## State predicates
 
 | Target state | Required predicates |
@@ -81,6 +85,9 @@ Forbidden examples include:
 - an `IMPLEMENTER` principal creating an approval for its own workflow;
 - reusing an approval after the approved revision changes; and
 - a worker advancing a task whose lease is expired or owned by another worker.
+- a deployment using an approval for another environment, revision, plan digest, or policy;
+- an expired or already consumed deployment approval; and
+- a production target or credential-requiring adapter during Phase 4.1.
 
 ## Tasks, attempts, and runs
 
