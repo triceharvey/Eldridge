@@ -4,12 +4,12 @@ This checklist is the boundary between the locally verified implementation and e
 
 ## Repository activation
 
-- [ ] Configure the repository-local Git author name and email.
-- [ ] Review the staged initial source tree.
-- [ ] Create the initial commit on `main`.
-- [ ] Create or select the GitHub repository with an explicit visibility decision.
-- [ ] Authenticate GitHub CLI and add the selected repository as `origin`.
-- [ ] Push `main` and preserve the first hosted CI run as evidence.
+- [x] Configure the repository-local Git author name and email.
+- [x] Review the staged initial source tree.
+- [x] Create the initial commit on `main`.
+- [x] Create `triceharvey/Eldridge` as a private GitHub repository.
+- [x] Authenticate GitHub CLI and add the selected repository as `origin`.
+- [x] Push `main` and preserve the first successful hosted CI run as evidence.
 
 ## GitHub security activation
 
