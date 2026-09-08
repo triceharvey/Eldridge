@@ -16,6 +16,9 @@ This checklist is the boundary between the locally verified implementation and e
   recreating the private repository from the sanitized history and verifying the old root
   commit is no longer reachable.
 - [x] Select and add the Apache License 2.0 before public visibility.
+- [x] Document the license, contribution, provider, dependency, and AI-output boundaries.
+- [x] Enforce full-commit-SHA pinning for GitHub Actions, retain read-only default workflow
+  permissions, prohibit workflow approval of pull requests, and delete merged branches.
 
 ## GitHub security activation
 

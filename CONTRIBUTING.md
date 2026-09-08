@@ -24,6 +24,8 @@ sanitized example files already included in the repository.
 - Changes may not weaken separation of duties, auditability, or human approval to make a test
   pass.
 - New dependencies require a concrete operational or security justification.
+- Third-party or AI-assisted material must follow the provenance and compatibility checks in
+  `docs/licensing.md`.
 - Live-provider tests must remain separately opted in and must clearly disclose cost and data
   egress.
 

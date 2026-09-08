@@ -144,6 +144,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Controlled continuous improvement](docs/continuous-improvement.md)
 - [Architecture Decision Records](docs/adr/)
 - [Repository activation and public-launch gates](docs/activation-preflight.md)
+- [Licensing and third-party boundary](docs/licensing.md)
 - [Security policy](SECURITY.md)
 - [Contribution guide](CONTRIBUTING.md)
 
@@ -151,7 +152,9 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 
 Licensed under the [Apache License 2.0](LICENSE). This permissive license includes an explicit
 patent grant and requires preservation of applicable copyright, patent, trademark, and
-attribution notices when the work is redistributed.
+attribution notices when the work is redistributed. Provider services, models, dependencies,
+operator projects, and model outputs are separate from the Eldridge license; see the
+[licensing boundary](docs/licensing.md).
 
 ## Guiding invariants
 
