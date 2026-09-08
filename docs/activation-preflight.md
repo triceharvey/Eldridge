@@ -13,6 +13,7 @@ This checklist is the boundary between the locally verified implementation and e
 - [x] Rewrite the private branch history and current refs to remove the original commit email.
 - [x] Verify the rewritten tree and commit count match the pre-rewrite repository.
 - [ ] Resolve GitHub's retained pre-rewrite commit object before public visibility.
+- [x] Select and add the Apache License 2.0 before public visibility.
 
 ## GitHub security activation
 

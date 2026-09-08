@@ -149,9 +149,9 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 
 ## License status
 
-No open-source license has been granted yet. Until the project owner selects and adds a
-license, the source is available for review only and ordinary copyright restrictions apply.
-The license decision is a required gate before the repository is intentionally made public.
+Licensed under the [Apache License 2.0](LICENSE). This permissive license includes an explicit
+patent grant and requires preservation of applicable copyright, patent, trademark, and
+attribution notices when the work is redistributed.
 
 ## Guiding invariants
 
