@@ -1,5 +1,12 @@
 # Multi-Agent AI Engineering Control Plane
 
+[![CI](https://github.com/triceharvey/Eldridge/actions/workflows/ci.yml/badge.svg)](https://github.com/triceharvey/Eldridge/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB.svg)](https://www.python.org/)
+
+**Status:** private validation and public-launch hardening. The control plane is not yet a
+hosted service, and all commercial providers and privileged integrations remain disabled by
+default.
+
 This repository defines a production-minded control plane for coordinating specialized AI engineering agents under explicit policy, isolation, audit, and human approval. The system is not a group chat for models. It is a workflow engine in which agents are treated as untrusted, non-human service identities and deterministic controls outrank model recommendations.
 
 The repository has completed **Phase 0** and the **Phase 1 deterministic control-plane skeleton** approved on 2026-09-06. Phase 2 engineering controls are complete locally except for explicitly approved paid-provider canaries. Phase 3 engineering is locally complete: revision-bound GitHub CI evidence, draft PR proposals, independent merge-readiness assessment, OIDC-backed production identity, read-only post-merge confirmation, durable Prometheus metrics, an authenticated dashboard, and TLS-ready container packaging. Environment-specific hosted activation evidence remains pending. The system cannot execute a merge, deploy, access production secrets, or contact an external provider by default.
@@ -136,6 +143,15 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Capability routing and adversarial-input strategy](docs/capability-routing.md)
 - [Controlled continuous improvement](docs/continuous-improvement.md)
 - [Architecture Decision Records](docs/adr/)
+- [Repository activation and public-launch gates](docs/activation-preflight.md)
+- [Security policy](SECURITY.md)
+- [Contribution guide](CONTRIBUTING.md)
+
+## License status
+
+No open-source license has been granted yet. Until the project owner selects and adds a
+license, the source is available for review only and ordinary copyright restrictions apply.
+The license decision is a required gate before the repository is intentionally made public.
 
 ## Guiding invariants
 
