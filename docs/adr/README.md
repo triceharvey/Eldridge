@@ -9,5 +9,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0005: Scoped human approvals](0005-scoped-human-approvals.md)
 - [ADR-0006: Append-only audit events](0006-append-only-audit.md)
 - [ADR-0007: Narrow Windsurf MCP boundary](0007-narrow-windsurf-mcp-boundary.md)
+- [ADR-0008: Controlled deployment boundary](0008-controlled-deployment-boundary.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.

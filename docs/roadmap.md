@@ -46,6 +46,8 @@ Current rough status: Phase 0 and Phase 1 are complete; Phase 2 is about 95% com
 
 Design this phase separately before implementation. Add environment inventory, deployment plans, scoped approval, short-lived deployment credentials, post-deploy verification, rollback decision support, and stronger secret management. Begin with a non-production environment.
 
+The provider-neutral design is proposed in `docs/phase-4-deployment-design.md` and ADR 0008. Implementation remains gated on owner approval. No hosting provider, cloud resource, paid service, credential, or deployment is authorized by the proposal.
+
 Exit criteria: the control plane cannot deploy without a valid environment- and revision-bound approval; credentials are short lived; partial deployment enters reconciliation or `ROLLBACK_REQUIRED`; recovery is exercised.
 
 ## Phase 5 — Scale and platform evolution
