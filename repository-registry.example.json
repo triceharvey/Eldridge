@@ -1,0 +1,8 @@
+[
+  {
+    "scope_id": "owner/repository",
+    "path": "/absolute/path/to/repository",
+    "base_revision": "HEAD",
+    "writable_paths": ["src", "tests", "docs"]
+  }
+]

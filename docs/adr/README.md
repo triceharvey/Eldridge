@@ -1,0 +1,13 @@
+# Architecture Decision Records
+
+ADRs capture decisions that materially shape security, reliability, or evolution. ADRs 0001–0006 were accepted after the project owner approved the Phase 0 roadmap on 2026-09-06. ADR 0007 records the approved local Phase 2 interoperability boundary.
+
+- [ADR-0001: Modular monolith for the MVP](0001-modular-monolith.md)
+- [ADR-0002: PostgreSQL-backed durable workflow and leasing](0002-postgresql-workflow-and-leasing.md)
+- [ADR-0003: Task-scoped capability authorization](0003-task-scoped-capabilities.md)
+- [ADR-0004: Worktree plus ephemeral-container isolation](0004-isolated-execution.md)
+- [ADR-0005: Scoped human approvals](0005-scoped-human-approvals.md)
+- [ADR-0006: Append-only audit events](0006-append-only-audit.md)
+- [ADR-0007: Narrow Windsurf MCP boundary](0007-narrow-windsurf-mcp-boundary.md)
+
+Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.

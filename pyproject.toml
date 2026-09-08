@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-engineering-control-plane"
+version = "0.3.0"
+description = "A policy-controlled, auditable orchestration plane for specialized AI engineering agents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.14,<2",
+  "fastapi>=0.115,<1",
+  "httpx>=0.28,<1",
+  "mcp>=2,<3",
+  "pyjwt[crypto]>=2.10,<3",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic-settings>=2.7,<3",
+  "prometheus-client>=0.22,<1",
+  "sqlalchemy>=2.0,<3",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.14,<2",
+  "pip-audit>=2.9,<3",
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+]
+
+[project.scripts]
+control-plane = "control_plane.cli:main"
+control-plane-api = "control_plane.api:run"
+control-plane-worker = "control_plane.worker:main"
+control-plane-mcp = "control_plane.mcp_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/control_plane"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "docker: requires a running Docker daemon and the pinned sandbox image",
+  "live_provider: incurs external network activity and may incur provider cost",
+  "postgres: requires CONTROL_PLANE_TEST_DATABASE_URL pointing to PostgreSQL",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]

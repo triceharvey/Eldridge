@@ -1,0 +1,16 @@
+from typing import Protocol
+
+from control_plane.domain import ProviderRequest, ProviderResult
+
+
+class ModelProvider(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    def capabilities(self) -> frozenset[str]: ...
+
+    def submit(self, request: ProviderRequest) -> ProviderResult: ...
+
+    def cancel(self, run_id: str) -> bool: ...
+
+    def health(self) -> bool: ...

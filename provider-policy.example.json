@@ -1,0 +1,27 @@
+{
+  "policy_version": "provider-activation/v1",
+  "allow_external_egress": false,
+  "include_mock_providers": true,
+  "secret_environment": {
+    "anthropic-api-key": "ANTHROPIC_API_KEY",
+    "devin-service-token": "DEVIN_API_KEY"
+  },
+  "anthropic": {
+    "enabled": false,
+    "model": "claude-sonnet-5",
+    "api_key_ref": "anthropic-api-key",
+    "max_tokens": 4096,
+    "timeout_seconds": 60,
+    "maximum_data_classification": "INTERNAL",
+    "maximum_risk": "MEDIUM"
+  },
+  "devin": {
+    "enabled": false,
+    "organization_id": "org-replace-me",
+    "service_token_ref": "devin-service-token",
+    "timeout_seconds": 60,
+    "maximum_cost_units": 2,
+    "maximum_data_classification": "INTERNAL",
+    "maximum_risk": "MEDIUM"
+  }
+}

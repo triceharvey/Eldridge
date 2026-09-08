@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: control_plane_test
+          POSTGRES_USER: control_plane
+          POSTGRES_PASSWORD: control_plane
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U control_plane -d control_plane_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CONTROL_PLANE_TEST_DATABASE_URL: postgresql+psycopg://control_plane:control_plane@localhost:5432/control_plane_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e '.[dev]'
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy src
+      - run: pytest -m "not live_provider" --cov=control_plane --cov-report=term-missing
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target api -t control-plane-api:ci .
+      - run: docker build --target worker -t control-plane-worker:ci .
+      - name: Verify non-root runtime identities
+        run: |
+          test "$(docker image inspect control-plane-api:ci --format '{{.Config.User}}')" = "65532:65532"
+          test "$(docker image inspect control-plane-worker:ci --format '{{.Config.User}}')" = "65532:65532"
+      - name: Validate TLS ingress configuration
+        run: |
+          docker run --rm \
+            -e ACME_EMAIL=operator@example.com \
+            -e CONTROL_PLANE_DOMAIN=control-plane.example.com \
+            -v "$PWD/deployment/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 \
+            caddy validate --config /etc/caddy/Caddyfile
+      - name: Validate fail-closed deployment model
+        env:
+          CONTROL_PLANE_ENV_FILE: deployment/.env.production.example
+        run: >-
+          docker compose --env-file deployment/.env.production.example
+          -f compose.production.yaml config --quiet

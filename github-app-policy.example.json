@@ -1,0 +1,22 @@
+{
+  "policy_version": "github-app/v1",
+  "enabled": false,
+  "api_base": "https://api.github.com",
+  "client_id": "Iv1.replace-me",
+  "installation_id": 1,
+  "private_key_ref": "github-app-private-key",
+  "secret_environment": {
+    "github-app-private-key": "GITHUB_APP_PRIVATE_KEY"
+  },
+  "timeout_seconds": 30,
+  "repositories": [
+    {
+      "full_name": "owner/repository",
+      "base_branch": "main",
+      "required_checks": ["test", "security"],
+      "minimum_approving_reviews": 1,
+      "require_admin_enforcement": true,
+      "require_linear_history": true
+    }
+  ]
+}

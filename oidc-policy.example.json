@@ -1,0 +1,13 @@
+{
+  "policy_version": "oidc/v1",
+  "enabled": false,
+  "issuer": "https://identity.example.com",
+  "audience": "ai-engineering-control-plane",
+  "jwks_url": "https://identity.example.com/.well-known/jwks.json",
+  "algorithms": ["RS256"],
+  "clock_skew_seconds": 60,
+  "max_token_lifetime_seconds": 900,
+  "subject_principals": {
+    "replace-with-stable-oidc-subject": "dev-operator"
+  }
+}
