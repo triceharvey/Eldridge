@@ -540,3 +540,52 @@ def test_service_contains_ambiguous_rollback_without_retry(
     assert current["state"] == WorkflowState.ROLLBACK_REQUIRED.value
     with session_factory() as session:
         assert verify_audit_chain(session, str(workflow["id"]))
+
+
+def test_rejected_or_misbound_rollback_never_releases_containment(
+    session_factory: sessionmaker[Session],
+) -> None:
+    transport = ReleaseMarkerTransport(tamper_after_first_put=True)
+    service, workflow, plan, attempt, broker, broker_factory = _contained_local_deployment(
+        session_factory, transport
+    )
+
+    with pytest.raises(ConflictError, match="rollback target"):
+        service.approve(
+            workflow_id=str(workflow["id"]),
+            approver_id="dev-operator",
+            action=ApprovalAction.ROLLBACK,
+            target="unrecorded-rollback",
+            revision=MERGED_REVISION,
+            decision=ApprovalDecision.APPROVED,
+            rationale="This target is intentionally invalid.",
+            environment_id="eldridge-local-k3d",
+            plan_digest=str(plan["digest"]),
+            deployment_attempt_id=str(attempt["id"]),
+        )
+    rejected = service.approve(
+        workflow_id=str(workflow["id"]),
+        approver_id="dev-operator",
+        action=ApprovalAction.ROLLBACK,
+        target="restore-previous-release-marker-v1",
+        revision=MERGED_REVISION,
+        decision=ApprovalDecision.REJECTED,
+        rationale="Keep the failed deployment contained for investigation.",
+        environment_id="eldridge-local-k3d",
+        plan_digest=str(plan["digest"]),
+        deployment_attempt_id=str(attempt["id"]),
+    )
+    assert rejected["consumed_at"] is not None
+    with pytest.raises(AuthorizationError, match="exact unconsumed rollback approval"):
+        service.execute_local_rollback(
+            workflow_id=str(workflow["id"]),
+            attempt_id=str(attempt["id"]),
+            actor_id="dev-operator",
+            idempotency_key="phase-4-4-rejected-rollback",
+        )
+    assert len(broker.requests) == 1
+    assert len(broker_factory.requests) == 1
+    current = service.get_workflow(str(workflow["id"]), principal_id="dev-operator")
+    assert current["state"] == WorkflowState.ROLLBACK_REQUIRED.value
+    with session_factory() as session:
+        assert verify_audit_chain(session, str(workflow["id"]))

@@ -40,6 +40,12 @@ delivered only inside the adapter callback. The first operation updated and veri
 revision, plan digest, and artifact digest; the replay verified the same state without another
 update. Four intended RBAC checks were allowed and eight widening checks were denied.
 
+The Phase 4.4 exercise then deliberately replaced the just-deployed revision before independent
+verification. Eldridge contained the workflow in `ROLLBACK_REQUIRED`, consumed a separate exact
+rollback approval, requested a fresh credential bound to operation `ROLLBACK`, and restored only
+the recorded prior marker. A separate read verified the complete snapshot, the workflow entered
+`ROLLED_BACK`, the audit chain remained valid, and measured recovery execution was 45 ms.
+
 The token is now requested through Eldridge's concrete `KubernetesTokenRequestBroker`, validated
 in memory, discarded, and never printed or persisted. Only the non-secret reference scheme,
 broker and request bindings, audience, subject, issuance and expiry, and calculated lifetime are
@@ -63,8 +69,8 @@ trap deletes only that exact cluster name and its validated temporary directory,
 an assertion failure. Container images remain in the local Docker cache so later reproductions do
 not require another pull.
 
-This exercise proves the local Kubernetes identity, concrete credential-broker, bounded Phase 4.3
-deployment adapter, redaction, idempotency, verification, and teardown boundaries. It does not
-authorize `tofu apply`, deploy the Eldridge application, create a hosted environment, or satisfy
-the Phase 4.4 recovery-exercise criteria. SPIFFE/SPIRE remains deferred unless federation needs
-justify it.
+This exercise proves the local Kubernetes identity, concrete credential broker, bounded
+deployment adapter, redaction, idempotency, verification, controlled recovery, and teardown
+boundaries through Phase 4.4. It does not authorize `tofu apply`, deploy the Eldridge application,
+or create a hosted or production environment. SPIFFE/SPIRE remains deferred unless federation
+needs justify it.

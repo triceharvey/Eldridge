@@ -186,6 +186,14 @@ Inject a failed verification, require a rollback decision, execute the bounded r
 retain recovery-time and audit evidence. Production remains disabled until the owner approves
 the evidence and residual risk.
 
+Status: implemented and validated locally on 2026-09-09. A controlled fault corrupted the
+release-marker revision after a confirmed update, producing `ROLLBACK_REQUIRED`. The service
+required a distinct exact `ROLLBACK` approval, committed recovery intent before credential
+issuance, restored only the recorded prior snapshot with a fresh operation-bound credential,
+observed the target independently, and transitioned to `ROLLED_BACK` only after exact
+verification. The audit chain remained valid, recovery execution measured 45 ms, ambiguous
+rollback tests remained contained and non-replayable, and the ephemeral cluster was removed.
+
 ## Decisions still requiring owner approval
 
 1. The provider-neutral Phase 4 architecture was approved on 2026-09-08.
@@ -195,4 +203,6 @@ the evidence and residual risk.
    qualified on 2026-09-08; SPIFFE/SPIRE remains an optional future federation layer.
 5. The owner authorized the Phase 4.3 local environment inventory, fixed verification probes,
    and rollback-policy reference on 2026-09-09. This does not authorize rollback execution.
-6. Approve a separate production-readiness review after the non-production recovery exercise.
+6. The local Phase 4 recovery evidence is accepted by proceeding with this owner-requested Phase
+   4.4 exercise. Production or hosted activation still requires a separate production-readiness
+   review and exact owner approval.
