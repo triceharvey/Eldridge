@@ -159,6 +159,14 @@ class IntegrationDisabledError(ControlPlaneError):
     pass
 
 
+class DeploymentOutcomeUnknownError(ControlPlaneError):
+    """The target may have changed and must be reconciled without an automatic retry."""
+
+
+class DeploymentVerificationError(ControlPlaneError):
+    """A known target change could not be verified and requires rollback disposition."""
+
+
 class IntegrationResponseError(ControlPlaneError):
     pass
 

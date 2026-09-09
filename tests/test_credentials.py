@@ -11,6 +11,7 @@ from control_plane.credentials import (
     FakeCredentialBroker,
     KubectlTokenRequester,
     KubernetesTokenRequestBroker,
+    KubernetesTokenRequestBrokerFactory,
     WorkloadCredentialRequest,
 )
 from control_plane.domain import AuthorizationError, ValidationError
@@ -187,6 +188,28 @@ def test_kubernetes_broker_requires_explicit_opt_in_before_requesting_token() ->
     assert requester.calls == []
 
 
+def test_kubernetes_broker_factory_creates_one_exact_plan_binding() -> None:
+    factory = KubernetesTokenRequestBrokerFactory(
+        requester=StubTokenRequester(),
+        environment_id="eldridge-local-k3d",
+        adapter_id="k3d-identity-observer-v1",
+        namespace="eldridge-validation",
+        service_account="deployment-worker",
+        audience="eldridge-local-k3d",
+        issuer="https://kubernetes.default.svc.cluster.local",
+        resource_scope=("namespace/eldridge-validation",),
+        operation=CredentialOperation.OBSERVE,
+        enabled=False,
+    )
+
+    broker = factory.for_plan("c" * 64)
+
+    assert broker.plan_digest == "c" * 64
+    assert broker.enabled is False
+    with pytest.raises(ValidationError, match="SHA-256"):
+        factory.for_plan("not-a-digest")
+
+
 def test_kubernetes_broker_returns_only_validated_redacted_metadata() -> None:
     now = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
     issued = int(now.timestamp())
@@ -275,6 +298,22 @@ def test_kubernetes_broker_sanitizes_unexpected_requester_failure() -> None:
         _kubernetes_broker(requester).issue(_kubernetes_request())
     assert canary not in str(caught.value)
     assert caught.value.__suppress_context__ is True
+
+
+def test_kubernetes_broker_blocks_consumer_result_and_error_leaks() -> None:
+    now = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
+    token = _jwt(_valid_kubernetes_claims(int(now.timestamp())))
+    broker = _kubernetes_broker(StubTokenRequester(token))
+
+    with pytest.raises(ValidationError, match="contained credential material"):
+        broker.run(_kubernetes_request(), lambda credential, _handle: credential, now=now)
+
+    def leaking_error(credential: str, _handle: object) -> None:
+        raise ValidationError(f"unsafe {credential}")
+
+    with pytest.raises(ValidationError, match="failed safely") as caught:
+        broker.run(_kubernetes_request(), leaking_error, now=now)
+    assert token not in str(caught.value)
 
 
 def test_kubectl_requester_uses_typed_arguments_and_sanitizes_stderr(

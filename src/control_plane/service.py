@@ -5,15 +5,23 @@ from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from time import monotonic
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from control_plane.audit import append_audit_event
-from control_plane.credentials import CredentialBroker, DenyCredentialBroker
+from control_plane.credentials import (
+    CredentialBroker,
+    CredentialSessionBroker,
+    CredentialSessionBrokerFactory,
+    DenyCredentialBroker,
+    WorkloadCredentialHandle,
+)
 from control_plane.deployment import (
+    CredentialedDeploymentAdapter,
+    CredentialedDeploymentRun,
     DeploymentAdapter,
     DeploymentAttemptStatus,
     DeploymentPlan,
@@ -29,6 +37,8 @@ from control_plane.domain import (
     AuthorizationError,
     Capability,
     ConflictError,
+    DeploymentOutcomeUnknownError,
+    DeploymentVerificationError,
     DispositionDecision,
     ExecutionContext,
     ExecutionResult,
@@ -182,8 +192,11 @@ class ControlPlaneService:
         repository_registry: RepositoryRegistry | None = None,
         provider_policy_version: str = "built-in/mock-v1",
         github_app: GitHubAppClient | None = None,
-        deployment_adapters: tuple[DeploymentAdapter, ...] | None = None,
+        deployment_adapters: tuple[DeploymentAdapter | CredentialedDeploymentAdapter, ...]
+        | None = None,
         credential_broker: CredentialBroker | None = None,
+        credential_broker_factory: CredentialSessionBrokerFactory | None = None,
+        enable_local_deployment: bool = False,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider or MockProvider()
@@ -223,13 +236,26 @@ class ControlPlaneService:
         self.provider_policy_version = provider_policy_version
         self.github_app = github_app
         configured_adapters = deployment_adapters or (DryRunDeploymentAdapter(),)
-        if any(adapter.requires_credentials for adapter in configured_adapters):
-            raise ValueError("Phase 4.1 permits only no-credential deployment adapters")
+        if any(adapter.requires_credentials for adapter in configured_adapters) and not (
+            enable_local_deployment
+            and (
+                (
+                    credential_broker is not None
+                    and isinstance(credential_broker, CredentialSessionBroker)
+                )
+                or credential_broker_factory is not None
+            )
+        ):
+            raise ValueError(
+                "credential-requiring adapters need explicit local activation and a session broker"
+            )
         adapter_ids = [adapter.adapter_id for adapter in configured_adapters]
         if len(adapter_ids) != len(set(adapter_ids)):
             raise ValueError("deployment adapter IDs must be unique")
         self.deployment_adapters = {adapter.adapter_id: adapter for adapter in configured_adapters}
         self.credential_broker = credential_broker or DenyCredentialBroker()
+        self.credential_broker_factory = credential_broker_factory
+        self.enable_local_deployment = enable_local_deployment
 
     def create_workflow(
         self,
@@ -937,12 +963,21 @@ class ControlPlaneService:
         if len(verification_policy) != len(set(verification_policy)):
             raise ValidationError("deployment verification policy contains duplicates")
         if classification is EnvironmentClassification.PRODUCTION:
-            raise AuthorizationError("Phase 4.1 does not permit production environments")
+            raise AuthorizationError("Phase 4 does not permit production environments")
         adapter = self.deployment_adapters.get(adapter_id)
-        if adapter is None or adapter.requires_credentials:
-            raise AuthorizationError("deployment adapter is not approved for Phase 4.1")
-        if provider != "dry-run" or account_scope != "none" or region != "none":
-            raise AuthorizationError("Phase 4.1 environment must have no external target")
+        if adapter is None:
+            raise AuthorizationError("deployment adapter is not approved")
+        if adapter.requires_credentials:
+            if (
+                not self.enable_local_deployment
+                or classification is not EnvironmentClassification.DEVELOPMENT
+                or provider != "local-k3d"
+                or account_scope != "local"
+                or region != "local"
+            ):
+                raise AuthorizationError("credentialed deployment is restricted to local k3d")
+        elif provider != "dry-run" or account_scope != "none" or region != "none":
+            raise AuthorizationError("dry-run environment must have no external target")
         config_digest = self._digest(values)
         with self.session_factory() as session, session.begin():
             self.policy.authorize(
@@ -1118,7 +1153,7 @@ class ControlPlaneService:
                     "environment_id": environment_id,
                     "plan_digest": plan_digest,
                     "revision": revision,
-                    "simulated": True,
+                    "simulated": not adapter.requires_credentials,
                 },
             )
             session.flush()
@@ -1229,9 +1264,10 @@ class ControlPlaneService:
                 },
             )
         try:
-            execution = adapter.execute(plan, idempotency_key=attempt_id)
-            observation = adapter.observe(plan, execution)
-            verification = adapter.verify(plan, observation)
+            dry_run_adapter = cast(DeploymentAdapter, adapter)
+            execution = dry_run_adapter.execute(plan, idempotency_key=attempt_id)
+            observation = dry_run_adapter.observe(plan, execution)
+            verification = dry_run_adapter.verify(plan, observation)
         except Exception as exc:
             self._fail_deployment_dry_run(attempt_id, type(exc).__name__)
             raise
@@ -1296,6 +1332,225 @@ class ControlPlaneService:
             )
             session.flush()
             return self._deployment_attempt_dict(finalized_attempt)
+
+    def execute_local_deployment(
+        self,
+        *,
+        workflow_id: str,
+        plan_id: str,
+        actor_id: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        if not idempotency_key.strip() or len(idempotency_key) > 128:
+            raise ValidationError("deployment idempotency key is invalid")
+        if not self.enable_local_deployment or (
+            self.credential_broker_factory is None
+            and not isinstance(self.credential_broker, CredentialSessionBroker)
+        ):
+            raise AuthorizationError("local credentialed deployment is disabled")
+        request_digest = self._digest(
+            {"workflow_id": workflow_id, "plan_id": plan_id, "mode": "LOCAL_K3D"}
+        )
+        with self.session_factory() as session, session.begin():
+            self.policy.authorize(
+                session, actor_id, Capability.EXECUTE_DEPLOYMENT, require_human=True
+            )
+            workflow = self._get_workflow(session, workflow_id, lock=True)
+            existing = session.scalar(
+                select(DeploymentAttemptRecord).where(
+                    DeploymentAttemptRecord.actor_id == actor_id,
+                    DeploymentAttemptRecord.idempotency_key == idempotency_key,
+                )
+            )
+            if existing is not None:
+                if existing.request_digest != request_digest:
+                    raise ConflictError("deployment idempotency key was reused")
+                if existing.status == DeploymentAttemptStatus.SUCCEEDED.value:
+                    return self._deployment_attempt_dict(existing)
+                raise ConflictError("deployment attempt is not replayable")
+            if WorkflowState(workflow.state) is not WorkflowState.AWAITING_DEPLOYMENT_APPROVAL:
+                raise InvalidTransitionError("workflow is not awaiting deployment approval")
+            plan_record = session.get(DeploymentPlanRecord, plan_id)
+            if plan_record is None or plan_record.workflow_id != workflow_id:
+                raise NotFoundError("deployment plan not found")
+            environment = session.get(DeploymentEnvironment, plan_record.environment_id)
+            if (
+                environment is None
+                or not environment.active
+                or environment.classification != EnvironmentClassification.DEVELOPMENT.value
+                or environment.provider != "local-k3d"
+                or environment.account_scope != "local"
+                or environment.region != "local"
+            ):
+                raise AuthorizationError("deployment environment is not an active local target")
+            adapter = self.deployment_adapters.get(environment.adapter_id)
+            if adapter is None or not adapter.requires_credentials:
+                raise AuthorizationError("credentialed local deployment adapter is unavailable")
+            approval = session.scalar(
+                select(Approval)
+                .where(
+                    Approval.workflow_id == workflow_id,
+                    Approval.action == ApprovalAction.DEPLOY.value,
+                    Approval.decision == ApprovalDecision.APPROVED.value,
+                    Approval.environment_id == environment.id,
+                    Approval.plan_digest == plan_record.digest,
+                    Approval.revision == plan_record.revision,
+                    Approval.policy_version == plan_record.policy_version,
+                    Approval.consumed_at.is_(None),
+                )
+                .order_by(Approval.created_at.desc())
+                .limit(1)
+            )
+            if approval is None:
+                raise AuthorizationError("exact unconsumed deployment approval is required")
+            if self._as_utc(approval.expires_at) <= datetime.now(UTC):
+                raise AuthorizationError("deployment approval has expired")
+            plan = self._deployment_plan_value(plan_record)
+            adapter.validate_plan(plan)
+            attempt = DeploymentAttemptRecord(
+                workflow_id=workflow_id,
+                plan_id=plan_id,
+                approval_id=approval.id,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+                adapter_id=adapter.adapter_id,
+                status=DeploymentAttemptStatus.RUNNING.value,
+                simulated=False,
+                result_json={"intent_committed": True, "credential_requested": True},
+            )
+            session.add(attempt)
+            session.flush()
+            approval.consumed_at = datetime.now(UTC)
+            attempt_id = attempt.id
+            append_audit_event(
+                session,
+                workflow_id=workflow_id,
+                event_type="deployment.local_started",
+                actor_id=actor_id,
+                resource_type="deployment_attempt",
+                resource_id=attempt_id,
+                outcome="STARTED",
+                payload={
+                    "adapter_id": adapter.adapter_id,
+                    "approval_id": approval.id,
+                    "environment_id": plan.environment_id,
+                    "plan_digest": plan.digest,
+                    "revision": plan.revision,
+                },
+            )
+
+        credentialed_adapter = cast(CredentialedDeploymentAdapter, adapter)
+        session_broker = (
+            self.credential_broker_factory.for_plan(plan.digest)
+            if self.credential_broker_factory is not None
+            else cast(CredentialSessionBroker, self.credential_broker)
+        )
+        target_contacted = False
+
+        def run_adapter(
+            credential: str, handle: WorkloadCredentialHandle
+        ) -> CredentialedDeploymentRun:
+            nonlocal target_contacted
+            target_contacted = True
+            return credentialed_adapter.run_with_credential(
+                plan,
+                credential,
+                handle,
+                idempotency_key=attempt_id,
+            )
+
+        try:
+            credential_request = credentialed_adapter.credential_request(plan)
+            credential_use = session_broker.run(credential_request, run_adapter)
+            run = credential_use.result
+        except DeploymentOutcomeUnknownError as exc:
+            self._fail_local_deployment(
+                attempt_id,
+                DeploymentAttemptStatus.UNKNOWN,
+                type(exc).__name__,
+                target_contacted=True,
+            )
+            raise
+        except DeploymentVerificationError as exc:
+            self._fail_local_deployment(
+                attempt_id,
+                DeploymentAttemptStatus.ROLLBACK_REQUIRED,
+                type(exc).__name__,
+                target_contacted=True,
+            )
+            raise
+        except Exception as exc:
+            self._fail_local_deployment(
+                attempt_id,
+                DeploymentAttemptStatus.FAILED,
+                type(exc).__name__,
+                target_contacted=target_contacted,
+            )
+            raise
+
+        execution = run.execution
+        observation = run.observation
+        verification = run.verification
+        with self.session_factory() as session, session.begin():
+            finalized = session.get(DeploymentAttemptRecord, attempt_id, with_for_update=True)
+            if finalized is None or finalized.status != DeploymentAttemptStatus.RUNNING.value:
+                raise ConflictError("deployment attempt is no longer running")
+            workflow = self._get_workflow(session, workflow_id, lock=True)
+            finalized.operation_reference = execution.operation_reference
+            finalized.result_json = {
+                "credential": self._credential_handle_dict(credential_use.handle),
+                "execution": execution.evidence,
+                "observation": observation.evidence,
+                "changed": execution.changed,
+            }
+            finalized.completed_at = datetime.now(UTC)
+            status = (
+                DeploymentAttemptStatus.SUCCEEDED
+                if verification.passed and not execution.simulated
+                else DeploymentAttemptStatus.ROLLBACK_REQUIRED
+            )
+            finalized.status = status.value
+            session.add(
+                DeploymentVerificationRecord(
+                    workflow_id=workflow_id,
+                    attempt_id=finalized.id,
+                    passed=verification.passed,
+                    observed_revision=verification.observed_revision,
+                    evidence=verification.evidence,
+                )
+            )
+            target_state = (
+                WorkflowState.DEPLOYED
+                if status is DeploymentAttemptStatus.SUCCEEDED
+                else WorkflowState.ROLLBACK_REQUIRED
+            )
+            self._transition(
+                session,
+                workflow,
+                target_state,
+                actor_id="orchestrator",
+                reason="local deployment verification completed",
+                extra={"deployment_attempt_id": finalized.id},
+            )
+            append_audit_event(
+                session,
+                workflow_id=workflow_id,
+                event_type="deployment.local_completed",
+                actor_id="orchestrator",
+                resource_type="deployment_attempt",
+                resource_id=finalized.id,
+                outcome=status.value,
+                payload={
+                    "changed": execution.changed,
+                    "credential_reference": credential_use.handle.reference,
+                    "plan_digest": plan.digest,
+                    "revision": plan.revision,
+                    "verification_passed": verification.passed,
+                },
+            )
+            session.flush()
+            return self._deployment_attempt_dict(finalized)
 
     def list_deployment_attempts(
         self, workflow_id: str, *, principal_id: str
@@ -3146,6 +3401,72 @@ class ControlPlaneService:
                     "external_target_contacted": False,
                 },
             )
+
+    def _fail_local_deployment(
+        self,
+        attempt_id: str,
+        status: DeploymentAttemptStatus,
+        error_code: str,
+        *,
+        target_contacted: bool,
+    ) -> None:
+        if status not in {
+            DeploymentAttemptStatus.FAILED,
+            DeploymentAttemptStatus.UNKNOWN,
+            DeploymentAttemptStatus.ROLLBACK_REQUIRED,
+        }:
+            raise ValueError("invalid local deployment failure status")
+        with self.session_factory() as session, session.begin():
+            attempt = session.get(DeploymentAttemptRecord, attempt_id, with_for_update=True)
+            if attempt is None or attempt.status != DeploymentAttemptStatus.RUNNING.value:
+                return
+            attempt.status = status.value
+            attempt.error_code = error_code[:64]
+            attempt.completed_at = datetime.now(UTC)
+            attempt.result_json = {
+                "credential_requested": True,
+                "error": "local deployment did not produce verified success",
+                "target_contacted": target_contacted,
+            }
+            if status is DeploymentAttemptStatus.ROLLBACK_REQUIRED:
+                workflow = self._get_workflow(session, attempt.workflow_id, lock=True)
+                self._transition(
+                    session,
+                    workflow,
+                    WorkflowState.ROLLBACK_REQUIRED,
+                    actor_id="orchestrator",
+                    reason="local deployment changed but verification was not established",
+                    extra={"deployment_attempt_id": attempt.id},
+                )
+            append_audit_event(
+                session,
+                workflow_id=attempt.workflow_id,
+                event_type="deployment.local_failed",
+                actor_id="orchestrator",
+                resource_type="deployment_attempt",
+                resource_id=attempt.id,
+                outcome=status.value,
+                payload={
+                    "error_code": attempt.error_code,
+                    "target_contacted": target_contacted,
+                },
+            )
+
+    @staticmethod
+    def _credential_handle_dict(handle: WorkloadCredentialHandle) -> dict[str, Any]:
+        return {
+            "reference": handle.reference,
+            "broker_id": handle.broker_id,
+            "environment_id": handle.environment_id,
+            "plan_digest": handle.plan_digest,
+            "operation": handle.operation.value,
+            "audience": handle.audience,
+            "subject": handle.subject,
+            "resource_scope": list(handle.resource_scope),
+            "issued_at": handle.issued_at.isoformat(),
+            "expires_at": handle.expires_at.isoformat(),
+            "simulated": handle.simulated,
+        }
 
     @staticmethod
     def _deployment_plan_value(record: DeploymentPlanRecord) -> DeploymentPlan:

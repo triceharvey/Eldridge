@@ -285,12 +285,12 @@ def test_agent_cannot_register_environment(service: ControlPlaneService) -> None
         )
 
 
-def test_phase_4_1_refuses_credential_requiring_adapter(service: ControlPlaneService) -> None:
+def test_default_service_refuses_credential_requiring_adapter(service: ControlPlaneService) -> None:
     class CredentialAdapter(DryRunDeploymentAdapter):
         adapter_id = "credential-adapter"
         requires_credentials = True
 
-    with pytest.raises(ValueError, match="no-credential"):
+    with pytest.raises(ValueError, match="explicit local activation"):
         ControlPlaneService(
             service.session_factory,
             deployment_adapters=(CredentialAdapter(),),

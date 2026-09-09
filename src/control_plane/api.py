@@ -100,10 +100,10 @@ class DeploymentEnvironmentCreate(BaseModel):
     verification_policy: tuple[str, ...] = Field(min_length=1, max_length=100)
     rollback_policy: str = Field(min_length=1, max_length=256)
     policy_version: str = Field(min_length=1, max_length=64)
-    provider: Literal["dry-run"] = "dry-run"
-    account_scope: Literal["none"] = "none"
-    region: Literal["none"] = "none"
-    adapter_id: Literal["dry-run-v1"] = "dry-run-v1"
+    provider: Literal["dry-run", "local-k3d"] = "dry-run"
+    account_scope: Literal["none", "local"] = "none"
+    region: Literal["none", "local"] = "none"
+    adapter_id: Literal["dry-run-v1", "local-k3d-configmap-v1"] = "dry-run-v1"
 
 
 class DeploymentOperationCreate(BaseModel):
@@ -362,6 +362,21 @@ def create_app(
         service: Annotated[ControlPlaneService, Depends(service_dependency)],
     ) -> dict[str, Any]:
         return service.execute_deployment_dry_run(
+            workflow_id=workflow_id,
+            plan_id=plan_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+        )
+
+    @app.post("/workflows/{workflow_id}/deployment-plans/{plan_id}/local-execution")
+    def execute_local_deployment(
+        workflow_id: str,
+        plan_id: str,
+        request: DeploymentExecutionCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.execute_local_deployment(
             workflow_id=workflow_id,
             plan_id=plan_id,
             actor_id=principal_id,

@@ -8,13 +8,19 @@ import re
 import shutil
 import subprocess
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import Generic, Protocol, TypeVar, runtime_checkable
 
-from control_plane.domain import AuthorizationError, ValidationError
+from control_plane.domain import (
+    AuthorizationError,
+    DeploymentOutcomeUnknownError,
+    DeploymentVerificationError,
+    ValidationError,
+)
 
 
 class CredentialOperation(StrEnum):
@@ -22,6 +28,9 @@ class CredentialOperation(StrEnum):
     OBSERVE = "OBSERVE"
     VERIFY = "VERIFY"
     ROLLBACK = "ROLLBACK"
+
+
+CredentialResultT = TypeVar("CredentialResultT")
 
 
 @dataclass(frozen=True)
@@ -53,6 +62,12 @@ class WorkloadCredentialHandle:
     simulated: bool
 
 
+@dataclass(frozen=True)
+class CredentialUseResult(Generic[CredentialResultT]):
+    handle: WorkloadCredentialHandle
+    result: CredentialResultT
+
+
 class CredentialBroker(Protocol):
     broker_id: str
 
@@ -62,6 +77,24 @@ class CredentialBroker(Protocol):
         *,
         now: datetime | None = None,
     ) -> WorkloadCredentialHandle: ...
+
+
+@runtime_checkable
+class CredentialSessionBroker(CredentialBroker, Protocol):
+    def run(
+        self,
+        request: WorkloadCredentialRequest,
+        consumer: Callable[[str, WorkloadCredentialHandle], CredentialResultT],
+        *,
+        now: datetime | None = None,
+    ) -> CredentialUseResult[CredentialResultT]: ...
+
+
+@runtime_checkable
+class CredentialSessionBrokerFactory(Protocol):
+    broker_id: str
+
+    def for_plan(self, plan_digest: str) -> CredentialSessionBroker: ...
 
 
 class KubernetesTokenRequester(Protocol):
@@ -317,6 +350,39 @@ class KubernetesTokenRequestBroker:
         *,
         now: datetime | None = None,
     ) -> WorkloadCredentialHandle:
+        token, handle = self._issue_material(request, now=now)
+        token = ""
+        del token
+        return handle
+
+    def run(
+        self,
+        request: WorkloadCredentialRequest,
+        consumer: Callable[[str, WorkloadCredentialHandle], CredentialResultT],
+        *,
+        now: datetime | None = None,
+    ) -> CredentialUseResult[CredentialResultT]:
+        token, handle = self._issue_material(request, now=now)
+        try:
+            result = consumer(token, handle)
+            if token in repr(result):
+                raise ValidationError("credential-bound result contained credential material")
+        except (DeploymentOutcomeUnknownError, DeploymentVerificationError, ValidationError) as exc:
+            if token in str(exc):
+                raise ValidationError("credential-bound operation failed safely") from None
+            raise
+        except Exception:
+            raise ValidationError("credential-bound deployment operation failed") from None
+        finally:
+            token = ""
+        return CredentialUseResult(handle=handle, result=result)
+
+    def _issue_material(
+        self,
+        request: WorkloadCredentialRequest,
+        *,
+        now: datetime | None,
+    ) -> tuple[str, WorkloadCredentialHandle]:
         if not self.enabled:
             raise AuthorizationError("Kubernetes workload credential issuance is disabled")
         self._authorize(request)
@@ -333,9 +399,7 @@ class KubernetesTokenRequestBroker:
         claims = _decode_jwt_claims(token)
         issued_at, expires_at = self._validate_claims(claims, current_time)
         reference = f"kubernetes-token:{uuid.uuid4()}"
-        token = ""  # discard the only broker-owned reference before returning metadata
-        del token
-        return WorkloadCredentialHandle(
+        handle = WorkloadCredentialHandle(
             reference=reference,
             broker_id=self.broker_id,
             environment_id=request.environment_id,
@@ -348,6 +412,7 @@ class KubernetesTokenRequestBroker:
             expires_at=expires_at,
             simulated=False,
         )
+        return token, handle
 
     def _authorize(self, request: WorkloadCredentialRequest) -> None:
         if request.environment_id != self.environment_id:
@@ -406,6 +471,58 @@ class KubernetesTokenRequestBroker:
         if abs((current_time - issued_at).total_seconds()) > 60 or expires_at <= current_time:
             raise AuthorizationError("issued credential validity window is invalid")
         return issued_at, expires_at
+
+
+class KubernetesTokenRequestBrokerFactory:
+    """Creates one exact-plan broker after the service authorizes that immutable plan."""
+
+    broker_id = KubernetesTokenRequestBroker.broker_id
+
+    def __init__(
+        self,
+        *,
+        requester: KubernetesTokenRequester,
+        environment_id: str,
+        adapter_id: str,
+        namespace: str,
+        service_account: str,
+        audience: str,
+        issuer: str,
+        resource_scope: tuple[str, ...],
+        operation: CredentialOperation,
+        enabled: bool = False,
+        lifetime_seconds: int = 600,
+    ) -> None:
+        self.requester = requester
+        self.environment_id = environment_id
+        self.adapter_id = adapter_id
+        self.namespace = namespace
+        self.service_account = service_account
+        self.audience = audience
+        self.issuer = issuer
+        self.resource_scope = resource_scope
+        self.operation = operation
+        self.enabled = enabled
+        self.lifetime_seconds = lifetime_seconds
+        self.for_plan("0" * 64)
+
+    def for_plan(self, plan_digest: str) -> KubernetesTokenRequestBroker:
+        if not _is_sha256(plan_digest):
+            raise ValidationError("credential broker factory requires a lowercase SHA-256 digest")
+        return KubernetesTokenRequestBroker(
+            requester=self.requester,
+            environment_id=self.environment_id,
+            adapter_id=self.adapter_id,
+            plan_digest=plan_digest,
+            namespace=self.namespace,
+            service_account=self.service_account,
+            audience=self.audience,
+            issuer=self.issuer,
+            resource_scope=self.resource_scope,
+            operation=self.operation,
+            enabled=self.enabled,
+            lifetime_seconds=self.lifetime_seconds,
+        )
 
 
 def _is_kubernetes_name(value: str) -> bool:

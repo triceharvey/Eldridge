@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
+from control_plane.credentials import WorkloadCredentialHandle, WorkloadCredentialRequest
 from control_plane.domain import ValidationError
 
 
@@ -64,6 +65,13 @@ class DeploymentVerification:
     evidence: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class CredentialedDeploymentRun:
+    execution: DeploymentExecution
+    observation: DeploymentObservation
+    verification: DeploymentVerification
+
+
 class DeploymentAdapter(Protocol):
     adapter_id: str
     requires_credentials: bool
@@ -79,6 +87,24 @@ class DeploymentAdapter(Protocol):
     def verify(
         self, plan: DeploymentPlan, observation: DeploymentObservation
     ) -> DeploymentVerification: ...
+
+
+class CredentialedDeploymentAdapter(Protocol):
+    adapter_id: str
+    requires_credentials: bool
+
+    def validate_plan(self, plan: DeploymentPlan) -> None: ...
+
+    def credential_request(self, plan: DeploymentPlan) -> WorkloadCredentialRequest: ...
+
+    def run_with_credential(
+        self,
+        plan: DeploymentPlan,
+        credential: str,
+        handle: WorkloadCredentialHandle,
+        *,
+        idempotency_key: str,
+    ) -> CredentialedDeploymentRun: ...
 
 
 class DryRunDeploymentAdapter:

@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+PROJECT_PYTHON="${PROJECT_ROOT}/.venv/bin/python"
 CLUSTER_NAME="eldridge-phase4-validation"
 K3S_IMAGE="rancher/k3s@sha256:2074403abe1bded11ef3dde09d457e13be8e0b64c218b1c4f8269b4565cfbc65"
 VALIDATION_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/eldridge-k3d.XXXXXX")"
@@ -22,6 +23,10 @@ for tool in docker k3d kubectl python3 tofu; do
     exit 1
   }
 done
+[[ -x "${PROJECT_PYTHON}" ]] || {
+  echo "the project virtual environment is required at ${PROJECT_PYTHON}" >&2
+  exit 1
+}
 
 if k3d cluster list -o json | python3 -c \
   'import json,sys; name=sys.argv[1]; raise SystemExit(0 if any(item.get("name") == name for item in json.load(sys.stdin)) else 1)' \
@@ -74,15 +79,25 @@ assert_permission() {
 
 assert_permission yes get pods eldridge-validation
 assert_permission yes list deployments.apps eldridge-validation
+assert_permission yes get configmap/eldridge-release eldridge-validation
+assert_permission yes update configmap/eldridge-release eldridge-validation
 assert_permission no get secrets eldridge-validation
 assert_permission no create pods eldridge-validation
+assert_permission no create configmaps eldridge-validation
+assert_permission no update configmap/other eldridge-validation
+assert_permission no delete configmap/eldridge-release eldridge-validation
 assert_permission no get pods eldridge-denied
 assert_permission no get pods kube-system
 assert_permission no create namespaces default
 
-PYTHONPATH="${PROJECT_ROOT}/src" python3 "${SCRIPT_DIR}/validate-broker.py" \
+PYTHONPATH="${PROJECT_ROOT}/src" "${PROJECT_PYTHON}" "${SCRIPT_DIR}/validate-broker.py" \
   --kubeconfig "${VALIDATION_KUBECONFIG}" \
   --manifest "${SCRIPT_DIR}/identity-boundary.yaml"
+
+PYTHONPATH="${PROJECT_ROOT}/src" "${PROJECT_PYTHON}" "${SCRIPT_DIR}/validate-deployment.py" \
+  --kubeconfig "${VALIDATION_KUBECONFIG}" \
+  --manifest "${SCRIPT_DIR}/identity-boundary.yaml" \
+  --revision "$(git -C "${PROJECT_ROOT}" rev-parse HEAD)"
 
 docker image inspect \
   "${K3S_IMAGE}" \
