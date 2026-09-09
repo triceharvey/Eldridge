@@ -51,6 +51,15 @@ Direct task success is useful but incomplete. Later phases should correlate prod
 
 Provider-generated scores, hidden chain-of-thought, free-form self-critiques, and model agreement are not routing evidence. Evaluation fixtures and policy changes must be versioned and reviewable. Suspicious repositories remain contained so they cannot poison prompts, validators, or the evidence pipeline.
 
+## Deployment-cost review
+
+At each Phase 4 exit review, compare the approved local profile with current open-source,
+managed-cloud, free-tier, and short-lived hosting options. Promote an alternative only when it
+reduces total cost or operational risk without weakening identity, approval, audit, backup,
+verification, or recovery controls. Pricing claims require current provider evidence. A cheaper
+headline price alone is not sufficient, and no monitoring result authorizes account creation,
+spend, or deployment.
+
 ## Visibility
 
 Authorized auditors can inspect:

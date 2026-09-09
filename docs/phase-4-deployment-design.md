@@ -146,8 +146,15 @@ contact an external target and does not move the workflow to `DEPLOYED`.
 Add one credential-broker interface and a fake broker. Qualify one real workload-identity
 mechanism only after the hosting target is selected and its trust policy is reviewed.
 OpenTofu is the approved provider-neutral infrastructure layer; ADR 0009 defines the saved-plan,
-version-pinning, state-security, and exact-apply boundary. The first managed or open-source
-hosting profile remains an owner decision.
+version-pinning, state-security, and exact-apply boundary. ADR 0010 selects the zero-cost local
+profile while leaving the first hosted profile as a later owner decision.
+
+The owner approved a zero-dollar local Docker/k3d target on 2026-09-08. The first implementation
+uses a deny-by-default credential broker and a metadata-only fake broker; it creates no token,
+contacts no issuer, and exposes no credential material. Local SPIFFE/SPIRE qualification remains
+a later part of this phase. A temporary hosted exercise has a separate maximum total budget of
+approximately USD 5 and still requires a selected provider, exact plan, and execution approval
+before any resource is created. Azure and persistent hosted K3s remain future alternatives.
 
 ### Phase 4.3 — One non-production adapter
 
@@ -164,8 +171,8 @@ the evidence and residual risk.
 
 1. The provider-neutral Phase 4 architecture was approved on 2026-09-08.
 2. OpenTofu was approved as the provider-neutral infrastructure layer on 2026-09-08.
-3. Select the first non-production hosting target and cost ceiling before real qualification.
-4. Select its workload-identity mechanism and maximum credential lifetime.
+3. The first non-production target is local Docker/k3d with a USD 0 infrastructure ceiling.
+4. Qualify local SPIFFE/SPIRE and approve its real maximum credential lifetime.
 5. Approve environment inventory, verification probes, and rollback policy before any real
    deployment.
 6. Approve a separate production-readiness review after the non-production recovery exercise.

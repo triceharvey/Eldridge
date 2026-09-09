@@ -12,6 +12,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from control_plane.audit import append_audit_event
+from control_plane.credentials import CredentialBroker, DenyCredentialBroker
 from control_plane.deployment import (
     DeploymentAdapter,
     DeploymentAttemptStatus,
@@ -182,6 +183,7 @@ class ControlPlaneService:
         provider_policy_version: str = "built-in/mock-v1",
         github_app: GitHubAppClient | None = None,
         deployment_adapters: tuple[DeploymentAdapter, ...] | None = None,
+        credential_broker: CredentialBroker | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider or MockProvider()
@@ -227,6 +229,7 @@ class ControlPlaneService:
         if len(adapter_ids) != len(set(adapter_ids)):
             raise ValueError("deployment adapter IDs must be unique")
         self.deployment_adapters = {adapter.adapter_id: adapter for adapter in configured_adapters}
+        self.credential_broker = credential_broker or DenyCredentialBroker()
 
     def create_workflow(
         self,

@@ -87,6 +87,17 @@ The approved Phase 4.1 slice provides:
 Production environments and credential-requiring adapters fail closed in Phase 4.1. A successful
 dry run proves orchestration and policy behavior but never marks a workflow `DEPLOYED`.
 
+## Phase 4.2 zero-cost identity boundary
+
+The approved first target is local Docker with optional ephemeral k3d and a USD 0 incremental
+infrastructure ceiling. OpenTofu is the provider-neutral infrastructure layer. A deny-by-default
+credential broker prevents accidental issuance, while a policy-bound fake broker returns only
+simulated issuance metadata: it creates no token, exposes no secret, and contacts no issuer.
+
+A later temporary hosted exercise is capped at approximately USD 5 total and remains subject to
+a separate provider, plan, and execution decision. Azure and persistent hosted K3s remain future
+alternatives rather than active dependencies.
+
 ## Run locally
 
 Create an isolated Python environment and install the project:
