@@ -156,6 +156,11 @@ a later part of this phase. A temporary hosted exercise has a separate maximum t
 approximately USD 5 and still requires a selected provider, exact plan, and execution approval
 before any resource is created. Azure and persistent hosted K3s remain future alternatives.
 
+The saved-plan validation slice is implemented with pinned CLI/provider policy, exact resource
+and action allowlists, destructive-change and drift rejection, sensitive-artifact containment,
+SHA-256 plan/lock bindings, a zero-cost check, sanitized evidence, and a no-subprocess local
+simulation adapter. Real OpenTofu extraction and k3d execution remain disabled.
+
 ### Phase 4.3 — One non-production adapter
 
 Implement one narrowly scoped adapter for the selected target. Prove revision binding,

@@ -98,6 +98,11 @@ A later temporary hosted exercise is capped at approximately USD 5 total and rem
 a separate provider, plan, and execution decision. Azure and persistent hosted K3s remain future
 alternatives rather than active dependencies.
 
+The first OpenTofu validator now produces sanitized, digest-bound evidence from JSON plan
+fixtures and rejects unpinned providers, destructive actions, imports, provisioners, child
+modules, drift, sensitive markers, changed outputs, and any cost above zero. Its local adapter is
+simulation-only and proves that it starts no subprocess and contacts no target.
+
 ## Run locally
 
 Create an isolated Python environment and install the project:
@@ -161,6 +166,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 4 controlled deployment design](docs/phase-4-deployment-design.md)
 - [Phase 4.1 acceptance record](docs/phase-4-1-acceptance.md)
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
+- [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Onboarding other projects](docs/project-onboarding.md)
 - [Proposed data model](docs/data-model.md)
 - [Threat model](docs/threat-model.md)
