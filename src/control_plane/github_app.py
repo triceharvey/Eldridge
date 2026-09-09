@@ -231,13 +231,17 @@ class GitHubAppClient:
         if proposal.draft:
             reasons.append("pull_request_is_draft")
 
-        protection = self._request_json(
-            "GET",
-            f"/repos/{quote(owner)}/{quote(repo)}/branches/"
-            f"{quote(repo_policy.base_branch, safe='')}/protection",
-            token=token,
-        )
-        self._assess_protection(protection, repo_policy, reasons)
+        try:
+            protection = self._request_json(
+                "GET",
+                f"/repos/{quote(owner)}/{quote(repo)}/branches/"
+                f"{quote(repo_policy.base_branch, safe='')}/protection",
+                token=token,
+            )
+        except IntegrationResponseError:
+            reasons.append("branch_protection_unverifiable")
+        else:
+            self._assess_protection(protection, repo_policy, reasons)
         checks_body = self._request_json(
             "GET",
             f"/repos/{quote(owner)}/{quote(repo)}/commits/{expected_revision}/check-runs",

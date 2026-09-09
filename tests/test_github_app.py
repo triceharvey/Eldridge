@@ -196,6 +196,36 @@ def test_readiness_reports_every_failed_invariant_without_merging() -> None:
     assert not any(path.endswith("/merge") for path in observed_paths)
 
 
+def test_readiness_fails_closed_when_branch_protection_cannot_be_read() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/access_tokens"):
+            permissions = json.loads(request.content)["permissions"]
+            return httpx.Response(
+                201, json={"token": INSTALLATION_TOKEN, "permissions": permissions}
+            )
+        if request.url.path.endswith("/pulls/42"):
+            return httpx.Response(200, json=_pull(draft=False))
+        if request.url.path.endswith("/branches/main/protection"):
+            return httpx.Response(403, json={"message": "feature unavailable"})
+        return httpx.Response(
+            200,
+            json={
+                "check_runs": [
+                    {"name": "test", "status": "completed", "conclusion": "success"},
+                    {"name": "security", "status": "completed", "conclusion": "success"},
+                ]
+            },
+        )
+
+    result = _client(handler).assess_merge_readiness(
+        repository="owner/repository", pull_number=42, expected_revision=REVISION
+    )
+
+    assert result.ready is False
+    assert result.reasons == ("branch_protection_unverifiable",)
+    assert result.checks == {"security": "success", "test": "success"}
+
+
 def test_merge_confirmation_is_read_only_and_revision_bound() -> None:
     requests: list[tuple[str, str]] = []
 
