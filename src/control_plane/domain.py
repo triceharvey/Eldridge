@@ -24,6 +24,7 @@ class WorkflowState(StrEnum):
     BLOCKED = "BLOCKED"
     CANCELLED = "CANCELLED"
     ROLLBACK_REQUIRED = "ROLLBACK_REQUIRED"
+    ROLLED_BACK = "ROLLED_BACK"
 
 
 class TaskStatus(StrEnum):
@@ -87,12 +88,15 @@ class Capability(StrEnum):
     MANAGE_DEPLOYMENT_ENVIRONMENTS = "MANAGE_DEPLOYMENT_ENVIRONMENTS"
     CREATE_DEPLOYMENT_PLAN = "CREATE_DEPLOYMENT_PLAN"
     EXECUTE_DEPLOYMENT = "EXECUTE_DEPLOYMENT"
+    APPROVE_ROLLBACK = "APPROVE_ROLLBACK"
+    EXECUTE_ROLLBACK = "EXECUTE_ROLLBACK"
     READ_DEPLOYMENT = "READ_DEPLOYMENT"
 
 
 class ApprovalAction(StrEnum):
     MERGE = "MERGE"
     DEPLOY = "DEPLOY"
+    ROLLBACK = "ROLLBACK"
 
 
 class ApprovalDecision(StrEnum):
@@ -198,6 +202,8 @@ ROLE_CAPABILITIES: dict[AgentRole, frozenset[Capability]] = {
             Capability.MANAGE_DEPLOYMENT_ENVIRONMENTS,
             Capability.CREATE_DEPLOYMENT_PLAN,
             Capability.EXECUTE_DEPLOYMENT,
+            Capability.APPROVE_ROLLBACK,
+            Capability.EXECUTE_ROLLBACK,
             Capability.READ_DEPLOYMENT,
         }
     ),

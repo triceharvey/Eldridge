@@ -87,7 +87,8 @@ ALLOWED_TRANSITIONS: dict[WorkflowState, frozenset[WorkflowState]] = {
     WorkflowState.FAILED: frozenset(),
     WorkflowState.REJECTED: frozenset(),
     WorkflowState.CANCELLED: frozenset(),
-    WorkflowState.ROLLBACK_REQUIRED: frozenset(),
+    WorkflowState.ROLLBACK_REQUIRED: frozenset({WorkflowState.ROLLED_BACK}),
+    WorkflowState.ROLLED_BACK: frozenset(),
 }
 
 

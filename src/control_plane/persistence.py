@@ -284,6 +284,7 @@ class Approval(Base):
     policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
     environment_id: Mapped[str | None] = mapped_column(String(128))
     plan_digest: Mapped[str | None] = mapped_column(String(64))
+    deployment_attempt_id: Mapped[str | None] = mapped_column(String(36), index=True)
     approver_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
@@ -379,15 +380,27 @@ class DeploymentVerificationRecord(Base):
 
 class DeploymentRollbackRecord(Base):
     __tablename__ = "deployment_rollbacks"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_deployment_rollback_actor_key"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), index=True)
     attempt_id: Mapped[str] = mapped_column(ForeignKey("deployment_attempts.id"), index=True)
+    approval_id: Mapped[str] = mapped_column(ForeignKey("approvals.id"), index=True)
     actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    rollback_reference: Mapped[str] = mapped_column(String(256), nullable=False)
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    operation_reference: Mapped[str | None] = mapped_column(String(256))
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    recovery_duration_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class WorkflowDisposition(Base):

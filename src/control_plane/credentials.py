@@ -94,7 +94,7 @@ class CredentialSessionBroker(CredentialBroker, Protocol):
 class CredentialSessionBrokerFactory(Protocol):
     broker_id: str
 
-    def for_plan(self, plan_digest: str) -> CredentialSessionBroker: ...
+    def for_request(self, request: WorkloadCredentialRequest) -> CredentialSessionBroker: ...
 
 
 class KubernetesTokenRequester(Protocol):
@@ -474,7 +474,7 @@ class KubernetesTokenRequestBroker:
 
 
 class KubernetesTokenRequestBrokerFactory:
-    """Creates one exact-plan broker after the service authorizes that immutable plan."""
+    """Creates one exact-request broker after the service authorizes the operation."""
 
     broker_id = KubernetesTokenRequestBroker.broker_id
 
@@ -489,7 +489,7 @@ class KubernetesTokenRequestBrokerFactory:
         audience: str,
         issuer: str,
         resource_scope: tuple[str, ...],
-        operation: CredentialOperation,
+        allowed_operations: frozenset[CredentialOperation],
         enabled: bool = False,
         lifetime_seconds: int = 600,
     ) -> None:
@@ -501,25 +501,40 @@ class KubernetesTokenRequestBrokerFactory:
         self.audience = audience
         self.issuer = issuer
         self.resource_scope = resource_scope
-        self.operation = operation
+        if not allowed_operations:
+            raise ValidationError("credential broker factory operations cannot be empty")
+        self.allowed_operations = allowed_operations
         self.enabled = enabled
         self.lifetime_seconds = lifetime_seconds
-        self.for_plan("0" * 64)
+        self.for_request(
+            WorkloadCredentialRequest(
+                environment_id=environment_id,
+                adapter_id=adapter_id,
+                plan_digest="0" * 64,
+                operation=next(iter(allowed_operations)),
+                audience=audience,
+                subject=f"system:serviceaccount:{namespace}:{service_account}",
+                resource_scope=resource_scope,
+                lifetime_seconds=lifetime_seconds,
+            )
+        )
 
-    def for_plan(self, plan_digest: str) -> KubernetesTokenRequestBroker:
-        if not _is_sha256(plan_digest):
+    def for_request(self, request: WorkloadCredentialRequest) -> KubernetesTokenRequestBroker:
+        if not _is_sha256(request.plan_digest):
             raise ValidationError("credential broker factory requires a lowercase SHA-256 digest")
+        if request.operation not in self.allowed_operations:
+            raise AuthorizationError("credential broker factory operation is not allowlisted")
         return KubernetesTokenRequestBroker(
             requester=self.requester,
             environment_id=self.environment_id,
             adapter_id=self.adapter_id,
-            plan_digest=plan_digest,
+            plan_digest=request.plan_digest,
             namespace=self.namespace,
             service_account=self.service_account,
             audience=self.audience,
             issuer=self.issuer,
             resource_scope=self.resource_scope,
-            operation=self.operation,
+            operation=request.operation,
             enabled=self.enabled,
             lifetime_seconds=self.lifetime_seconds,
         )

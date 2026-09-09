@@ -17,6 +17,7 @@ def test_k3d_boundary_is_pinned_and_least_privilege() -> None:
     validator = (K3D_DIR / "validate-boundary.sh").read_text()
     broker_validator = (K3D_DIR / "validate-broker.py").read_text()
     deployment_validator = (K3D_DIR / "validate-deployment.py").read_text()
+    recovery_validator = (K3D_DIR / "validate-recovery.py").read_text()
 
     assert "rancher/k3s@sha256:2074403abe1bded11ef3dde09d457e13" in cluster
     assert "disableLoadbalancer: true" in cluster
@@ -33,6 +34,9 @@ def test_k3d_boundary_is_pinned_and_least_privilege() -> None:
     assert "LocalK3dConfigMapAdapter" in deployment_validator
     assert '"first_changed"' in deployment_validator
     assert '"replay_changed"' in deployment_validator
+    assert "ApprovalAction.ROLLBACK" in recovery_validator
+    assert '"fault_injected"' in recovery_validator
+    assert '"rollback_verified"' in recovery_validator
     assert "PYTHONPATH=" in validator
     assert 'rm -r "${VALIDATION_TMP_DIR}"' in validator
 
@@ -66,5 +70,14 @@ def test_live_ephemeral_k3d_identity_boundary() -> None:
     assert '"first_verified": true' in result.stdout
     assert '"replay_changed": false' in result.stdout
     assert '"replay_verified": true' in result.stdout
+    assert '"failed_attempt_status": "ROLLBACK_REQUIRED"' in result.stdout
+    assert '"failed_state": "ROLLBACK_REQUIRED"' in result.stdout
+    assert '"fault_injected": true' in result.stdout
+    assert '"final_state": "ROLLED_BACK"' in result.stdout
+    assert '"rollback_approval_consumed": true' in result.stdout
+    assert '"rollback_operation": "ROLLBACK"' in result.stdout
+    assert '"rollback_status": "SUCCEEDED"' in result.stdout
+    assert '"rollback_verified": true' in result.stdout
+    assert '"audit_chain_valid": true' in result.stdout
     assert result.stdout.count("rbac expected=yes actual=yes") == 4
     assert result.stdout.count("rbac expected=no actual=no") == 8

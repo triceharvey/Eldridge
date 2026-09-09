@@ -57,6 +57,7 @@ class ApprovalCreate(BaseModel):
     expires_in_minutes: int = Field(default=15, ge=1, le=1440)
     environment_id: str | None = Field(default=None, min_length=1, max_length=128)
     plan_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    deployment_attempt_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class DispositionCreate(BaseModel):
@@ -127,6 +128,12 @@ class DeploymentPlanCreate(BaseModel):
 
 
 class DeploymentExecutionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class DeploymentRollbackCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     idempotency_key: str = Field(min_length=8, max_length=128)
@@ -292,6 +299,7 @@ def create_app(
             expires_in_minutes=request.expires_in_minutes,
             environment_id=request.environment_id,
             plan_digest=request.plan_digest,
+            deployment_attempt_id=request.deployment_attempt_id,
         )
 
     @app.post("/deployment-environments", status_code=status.HTTP_201_CREATED)
@@ -390,6 +398,29 @@ def create_app(
         service: Annotated[ControlPlaneService, Depends(service_dependency)],
     ) -> list[dict[str, Any]]:
         return service.list_deployment_attempts(workflow_id, principal_id=principal_id)
+
+    @app.post("/workflows/{workflow_id}/deployment-attempts/{attempt_id}/rollback")
+    def execute_local_rollback(
+        workflow_id: str,
+        attempt_id: str,
+        request: DeploymentRollbackCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.execute_local_rollback(
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+        )
+
+    @app.get("/workflows/{workflow_id}/deployment-rollbacks")
+    def list_deployment_rollbacks(
+        workflow_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> list[dict[str, Any]]:
+        return service.list_deployment_rollbacks(workflow_id, principal_id=principal_id)
 
     @app.get("/events")
     def list_events(

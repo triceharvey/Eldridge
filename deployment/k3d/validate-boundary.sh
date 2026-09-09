@@ -99,6 +99,11 @@ PYTHONPATH="${PROJECT_ROOT}/src" "${PROJECT_PYTHON}" "${SCRIPT_DIR}/validate-dep
   --manifest "${SCRIPT_DIR}/identity-boundary.yaml" \
   --revision "$(git -C "${PROJECT_ROOT}" rev-parse HEAD)"
 
+PYTHONPATH="${PROJECT_ROOT}/src" "${PROJECT_PYTHON}" "${SCRIPT_DIR}/validate-recovery.py" \
+  --kubeconfig "${VALIDATION_KUBECONFIG}" \
+  --manifest "${SCRIPT_DIR}/identity-boundary.yaml" \
+  --revision "$(git -C "${PROJECT_ROOT}" rev-parse HEAD)"
+
 docker image inspect \
   "${K3S_IMAGE}" \
   --format 'image_id={{.Id}} repo_digests={{join .RepoDigests ","}}'

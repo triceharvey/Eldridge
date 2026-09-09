@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from control_plane.credentials import WorkloadCredentialHandle, WorkloadCredentialRequest
 from control_plane.domain import ValidationError
@@ -28,6 +28,13 @@ class DeploymentAttemptStatus(StrEnum):
     UNKNOWN = "UNKNOWN"
     ROLLBACK_REQUIRED = "ROLLBACK_REQUIRED"
     RECONCILED = "RECONCILED"
+
+
+class RollbackStatus(StrEnum):
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    UNKNOWN = "UNKNOWN"
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,13 @@ class CredentialedDeploymentRun:
     verification: DeploymentVerification
 
 
+@dataclass(frozen=True)
+class CredentialedRollbackRun:
+    execution: DeploymentExecution
+    observation: DeploymentObservation
+    verification: DeploymentVerification
+
+
 class DeploymentAdapter(Protocol):
     adapter_id: str
     requires_credentials: bool
@@ -105,6 +119,21 @@ class CredentialedDeploymentAdapter(Protocol):
         *,
         idempotency_key: str,
     ) -> CredentialedDeploymentRun: ...
+
+
+@runtime_checkable
+class RecoverableDeploymentAdapter(CredentialedDeploymentAdapter, Protocol):
+    def rollback_credential_request(self, plan: DeploymentPlan) -> WorkloadCredentialRequest: ...
+
+    def rollback_with_credential(
+        self,
+        plan: DeploymentPlan,
+        previous_release: dict[str, str],
+        credential: str,
+        handle: WorkloadCredentialHandle,
+        *,
+        idempotency_key: str,
+    ) -> CredentialedRollbackRun: ...
 
 
 class DryRunDeploymentAdapter:

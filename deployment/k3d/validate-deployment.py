@@ -102,11 +102,13 @@ def main() -> None:
             audience=request.audience,
             issuer="https://kubernetes.default.svc.cluster.local",
             resource_scope=request.resource_scope,
-            operation=CredentialOperation.APPLY_PLAN,
+            allowed_operations=frozenset(
+                {CredentialOperation.APPLY_PLAN, CredentialOperation.ROLLBACK}
+            ),
             enabled=True,
             lifetime_seconds=600,
         )
-        broker = broker_factory.for_plan(plan.digest)
+        broker = broker_factory.for_request(request)
 
         first = broker.run(
             request,

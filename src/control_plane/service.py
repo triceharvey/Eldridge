@@ -22,11 +22,14 @@ from control_plane.credentials import (
 from control_plane.deployment import (
     CredentialedDeploymentAdapter,
     CredentialedDeploymentRun,
+    CredentialedRollbackRun,
     DeploymentAdapter,
     DeploymentAttemptStatus,
     DeploymentPlan,
     DryRunDeploymentAdapter,
     EnvironmentClassification,
+    RecoverableDeploymentAdapter,
+    RollbackStatus,
 )
 from control_plane.domain import (
     TASK_CAPABILITY,
@@ -72,6 +75,7 @@ from control_plane.persistence import (
     DeploymentAttemptRecord,
     DeploymentEnvironment,
     DeploymentPlanRecord,
+    DeploymentRollbackRecord,
     DeploymentVerificationRecord,
     ExecutionReconciliation,
     IdempotencyRecord,
@@ -1441,11 +1445,6 @@ class ControlPlaneService:
             )
 
         credentialed_adapter = cast(CredentialedDeploymentAdapter, adapter)
-        session_broker = (
-            self.credential_broker_factory.for_plan(plan.digest)
-            if self.credential_broker_factory is not None
-            else cast(CredentialSessionBroker, self.credential_broker)
-        )
         target_contacted = False
 
         def run_adapter(
@@ -1462,6 +1461,11 @@ class ControlPlaneService:
 
         try:
             credential_request = credentialed_adapter.credential_request(plan)
+            session_broker = (
+                self.credential_broker_factory.for_request(credential_request)
+                if self.credential_broker_factory is not None
+                else cast(CredentialSessionBroker, self.credential_broker)
+            )
             credential_use = session_broker.run(credential_request, run_adapter)
             run = credential_use.result
         except DeploymentOutcomeUnknownError as exc:
@@ -1564,6 +1568,247 @@ class ControlPlaneService:
                 .order_by(DeploymentAttemptRecord.started_at)
             ).all()
             return [self._deployment_attempt_dict(item) for item in records]
+
+    def execute_local_rollback(
+        self,
+        *,
+        workflow_id: str,
+        attempt_id: str,
+        actor_id: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        if not idempotency_key.strip() or len(idempotency_key) > 128:
+            raise ValidationError("rollback idempotency key is invalid")
+        if not self.enable_local_deployment or (
+            self.credential_broker_factory is None
+            and not isinstance(self.credential_broker, CredentialSessionBroker)
+        ):
+            raise AuthorizationError("local credentialed recovery is disabled")
+        request_digest = self._digest(
+            {"workflow_id": workflow_id, "attempt_id": attempt_id, "mode": "LOCAL_ROLLBACK"}
+        )
+        with self.session_factory() as session, session.begin():
+            self.policy.authorize(
+                session, actor_id, Capability.EXECUTE_ROLLBACK, require_human=True
+            )
+            workflow = self._get_workflow(session, workflow_id, lock=True)
+            existing = session.scalar(
+                select(DeploymentRollbackRecord).where(
+                    DeploymentRollbackRecord.actor_id == actor_id,
+                    DeploymentRollbackRecord.idempotency_key == idempotency_key,
+                )
+            )
+            if existing is not None:
+                if existing.request_digest != request_digest:
+                    raise ConflictError("rollback idempotency key was reused")
+                if existing.status == RollbackStatus.SUCCEEDED.value:
+                    return self._deployment_rollback_dict(existing)
+                raise ConflictError("rollback attempt is not replayable")
+            if WorkflowState(workflow.state) is not WorkflowState.ROLLBACK_REQUIRED:
+                raise InvalidTransitionError("workflow is not awaiting controlled recovery")
+            attempt = session.get(DeploymentAttemptRecord, attempt_id)
+            if (
+                attempt is None
+                or attempt.workflow_id != workflow_id
+                or attempt.status != DeploymentAttemptStatus.ROLLBACK_REQUIRED.value
+            ):
+                raise ConflictError("rollback target is not a contained deployment attempt")
+            plan_record = session.get(DeploymentPlanRecord, attempt.plan_id)
+            if plan_record is None:
+                raise ConflictError("rollback plan evidence is unavailable")
+            environment = session.get(DeploymentEnvironment, plan_record.environment_id)
+            if (
+                environment is None
+                or not environment.active
+                or environment.classification != EnvironmentClassification.DEVELOPMENT.value
+                or environment.provider != "local-k3d"
+                or environment.account_scope != "local"
+                or environment.region != "local"
+            ):
+                raise AuthorizationError("rollback environment is not an active local target")
+            adapter = self.deployment_adapters.get(environment.adapter_id)
+            if adapter is None or not isinstance(adapter, RecoverableDeploymentAdapter):
+                raise AuthorizationError("recoverable local deployment adapter is unavailable")
+            approval = session.scalar(
+                select(Approval)
+                .where(
+                    Approval.workflow_id == workflow_id,
+                    Approval.action == ApprovalAction.ROLLBACK.value,
+                    Approval.decision == ApprovalDecision.APPROVED.value,
+                    Approval.environment_id == environment.id,
+                    Approval.plan_digest == plan_record.digest,
+                    Approval.deployment_attempt_id == attempt_id,
+                    Approval.revision == plan_record.revision,
+                    Approval.policy_version == plan_record.policy_version,
+                    Approval.target == plan_record.rollback_reference,
+                    Approval.consumed_at.is_(None),
+                )
+                .order_by(Approval.created_at.desc())
+                .limit(1)
+            )
+            if approval is None:
+                raise AuthorizationError("exact unconsumed rollback approval is required")
+            if self._as_utc(approval.expires_at) <= datetime.now(UTC):
+                raise AuthorizationError("rollback approval has expired")
+            result_json = attempt.result_json
+            execution_evidence = result_json.get("execution")
+            previous_release = (
+                execution_evidence.get("previous_release")
+                if isinstance(execution_evidence, dict)
+                else None
+            )
+            if not isinstance(previous_release, dict) or any(
+                not isinstance(key, str) or not isinstance(value, str)
+                for key, value in previous_release.items()
+            ):
+                raise ConflictError("recorded rollback snapshot is unavailable or invalid")
+            plan = self._deployment_plan_value(plan_record)
+            adapter.validate_plan(plan)
+            rollback = DeploymentRollbackRecord(
+                workflow_id=workflow_id,
+                attempt_id=attempt_id,
+                approval_id=approval.id,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+                rollback_reference=plan.rollback_reference,
+                decision=ApprovalDecision.APPROVED.value,
+                rationale=approval.rationale,
+                status=RollbackStatus.RUNNING.value,
+                evidence={"intent_committed": True, "credential_requested": True},
+            )
+            session.add(rollback)
+            session.flush()
+            approval.consumed_at = datetime.now(UTC)
+            rollback_id = rollback.id
+            append_audit_event(
+                session,
+                workflow_id=workflow_id,
+                event_type="deployment.rollback_started",
+                actor_id=actor_id,
+                resource_type="deployment_rollback",
+                resource_id=rollback_id,
+                outcome="STARTED",
+                payload={
+                    "approval_id": approval.id,
+                    "deployment_attempt_id": attempt_id,
+                    "environment_id": environment.id,
+                    "plan_digest": plan.digest,
+                    "rollback_reference": plan.rollback_reference,
+                },
+            )
+
+        recoverable_adapter = adapter
+        started = monotonic()
+        target_contacted = False
+
+        def run_rollback(
+            credential: str, handle: WorkloadCredentialHandle
+        ) -> CredentialedRollbackRun:
+            nonlocal target_contacted
+            target_contacted = True
+            return recoverable_adapter.rollback_with_credential(
+                plan,
+                dict(previous_release),
+                credential,
+                handle,
+                idempotency_key=rollback_id,
+            )
+
+        try:
+            credential_request = recoverable_adapter.rollback_credential_request(plan)
+            session_broker = (
+                self.credential_broker_factory.for_request(credential_request)
+                if self.credential_broker_factory is not None
+                else cast(CredentialSessionBroker, self.credential_broker)
+            )
+            credential_use = session_broker.run(credential_request, run_rollback)
+            run = credential_use.result
+        except (DeploymentOutcomeUnknownError, DeploymentVerificationError) as exc:
+            self._fail_local_rollback(
+                rollback_id,
+                RollbackStatus.UNKNOWN,
+                type(exc).__name__,
+                target_contacted=True,
+                recovery_duration_ms=int((monotonic() - started) * 1000),
+            )
+            raise
+        except Exception as exc:
+            self._fail_local_rollback(
+                rollback_id,
+                RollbackStatus.FAILED,
+                type(exc).__name__,
+                target_contacted=target_contacted,
+                recovery_duration_ms=int((monotonic() - started) * 1000),
+            )
+            raise
+
+        duration_ms = int((monotonic() - started) * 1000)
+        with self.session_factory() as session, session.begin():
+            finalized = session.get(DeploymentRollbackRecord, rollback_id, with_for_update=True)
+            if finalized is None or finalized.status != RollbackStatus.RUNNING.value:
+                raise ConflictError("rollback attempt is no longer running")
+            workflow = self._get_workflow(session, workflow_id, lock=True)
+            finalized.operation_reference = run.execution.operation_reference
+            finalized.completed_at = datetime.now(UTC)
+            finalized.recovery_duration_ms = duration_ms
+            finalized.evidence = {
+                "credential": self._credential_handle_dict(credential_use.handle),
+                "execution": run.execution.evidence,
+                "observation": run.observation.evidence,
+                "verification": run.verification.evidence,
+                "changed": run.execution.changed,
+            }
+            recovered = run.verification.passed and not run.execution.simulated
+            finalized.status = (
+                RollbackStatus.SUCCEEDED.value if recovered else RollbackStatus.FAILED.value
+            )
+            if recovered:
+                self._transition(
+                    session,
+                    workflow,
+                    WorkflowState.ROLLED_BACK,
+                    actor_id="orchestrator",
+                    reason="approved local rollback independently verified recovery",
+                    extra={
+                        "deployment_attempt_id": attempt_id,
+                        "deployment_rollback_id": rollback_id,
+                        "recovery_duration_ms": duration_ms,
+                    },
+                )
+            append_audit_event(
+                session,
+                workflow_id=workflow_id,
+                event_type="deployment.rollback_completed",
+                actor_id="orchestrator",
+                resource_type="deployment_rollback",
+                resource_id=rollback_id,
+                outcome=finalized.status,
+                payload={
+                    "changed": run.execution.changed,
+                    "deployment_attempt_id": attempt_id,
+                    "recovery_duration_ms": duration_ms,
+                    "verification_passed": run.verification.passed,
+                },
+            )
+            session.flush()
+            result = self._deployment_rollback_dict(finalized)
+        if not recovered:
+            raise DeploymentVerificationError("local rollback did not verify recovery")
+        return result
+
+    def list_deployment_rollbacks(
+        self, workflow_id: str, *, principal_id: str
+    ) -> list[dict[str, Any]]:
+        with self.session_factory() as session:
+            self.policy.authorize(session, principal_id, Capability.READ_DEPLOYMENT)
+            self._get_workflow(session, workflow_id)
+            records = session.scalars(
+                select(DeploymentRollbackRecord)
+                .where(DeploymentRollbackRecord.workflow_id == workflow_id)
+                .order_by(DeploymentRollbackRecord.created_at)
+            ).all()
+            return [self._deployment_rollback_dict(item) for item in records]
 
     def operational_snapshot(self, *, principal_id: str | None = None) -> dict[str, Any]:
         now = datetime.now(UTC)
@@ -2665,12 +2910,13 @@ class ControlPlaneService:
         expires_in_minutes: int = 15,
         environment_id: str | None = None,
         plan_digest: str | None = None,
+        deployment_attempt_id: str | None = None,
     ) -> dict[str, Any]:
-        capability = (
-            Capability.APPROVE_MERGE
-            if action == ApprovalAction.MERGE
-            else Capability.APPROVE_DEPLOYMENT
-        )
+        capability = {
+            ApprovalAction.MERGE: Capability.APPROVE_MERGE,
+            ApprovalAction.DEPLOY: Capability.APPROVE_DEPLOYMENT,
+            ApprovalAction.ROLLBACK: Capability.APPROVE_ROLLBACK,
+        }[action]
         if expires_in_minutes < 1:
             raise ValidationError("approval expiry must be at least one minute")
         with self.session_factory() as session, session.begin():
@@ -2679,16 +2925,22 @@ class ControlPlaneService:
             if not target.strip() or not rationale.strip():
                 raise ValidationError("approval target and rationale are required")
             if action is ApprovalAction.MERGE:
-                if environment_id is not None or plan_digest is not None:
+                if (
+                    environment_id is not None
+                    or plan_digest is not None
+                    or deployment_attempt_id is not None
+                ):
                     raise ValidationError("merge approval cannot include deployment bindings")
                 if WorkflowState(workflow.state) != WorkflowState.AWAITING_HUMAN_APPROVAL:
                     raise InvalidTransitionError("workflow is not awaiting merge approval")
                 if not workflow.candidate_revision or revision != workflow.candidate_revision:
                     raise ConflictError("approval revision does not match the candidate revision")
                 policy_version = workflow.policy_version
-            else:
+            elif action is ApprovalAction.DEPLOY:
                 if WorkflowState(workflow.state) != WorkflowState.AWAITING_DEPLOYMENT_APPROVAL:
                     raise InvalidTransitionError("workflow is not awaiting deployment approval")
+                if deployment_attempt_id is not None:
+                    raise ValidationError("deployment approval cannot bind a prior attempt")
                 if not environment_id or not plan_digest:
                     raise ValidationError(
                         "deployment approval requires environment and plan digest"
@@ -2707,6 +2959,34 @@ class ControlPlaneService:
                 if revision != plan.revision or revision != workflow.merged_revision:
                     raise ConflictError("deployment approval revision is stale")
                 policy_version = plan.policy_version
+            else:
+                if WorkflowState(workflow.state) is not WorkflowState.ROLLBACK_REQUIRED:
+                    raise InvalidTransitionError("workflow is not awaiting rollback disposition")
+                if not environment_id or not plan_digest or not deployment_attempt_id:
+                    raise ValidationError(
+                        "rollback approval requires environment, plan, and attempt bindings"
+                    )
+                attempt = session.get(DeploymentAttemptRecord, deployment_attempt_id)
+                if (
+                    attempt is None
+                    or attempt.workflow_id != workflow_id
+                    or attempt.status != DeploymentAttemptStatus.ROLLBACK_REQUIRED.value
+                ):
+                    raise ConflictError("rollback approval does not match a contained attempt")
+                plan = session.get(DeploymentPlanRecord, attempt.plan_id)
+                if (
+                    plan is None
+                    or plan.environment_id != environment_id
+                    or plan.digest != plan_digest
+                ):
+                    raise ConflictError("rollback approval does not match the failed plan")
+                if target.strip() != plan.rollback_reference:
+                    raise ConflictError(
+                        "rollback target must equal the recorded rollback reference"
+                    )
+                if revision != plan.revision or revision != workflow.merged_revision:
+                    raise ConflictError("rollback approval revision is stale")
+                policy_version = plan.policy_version
             approval = Approval(
                 workflow_id=workflow.id,
                 action=action.value,
@@ -2715,6 +2995,7 @@ class ControlPlaneService:
                 policy_version=policy_version,
                 environment_id=environment_id,
                 plan_digest=plan_digest,
+                deployment_attempt_id=deployment_attempt_id,
                 approver_id=approver_id,
                 decision=decision.value,
                 rationale=rationale.strip(),
@@ -2722,7 +3003,9 @@ class ControlPlaneService:
             )
             session.add(approval)
             session.flush()
-            if action is ApprovalAction.MERGE or decision is ApprovalDecision.REJECTED:
+            if action is ApprovalAction.MERGE or (
+                action is ApprovalAction.DEPLOY and decision is ApprovalDecision.REJECTED
+            ):
                 approval.consumed_at = datetime.now(UTC)
                 target_state = (
                     WorkflowState.APPROVED
@@ -2739,7 +3022,7 @@ class ControlPlaneService:
                     ),
                     extra={"approval_id": approval.id, "revision": revision, "target": target},
                 )
-            else:
+            elif action is ApprovalAction.DEPLOY:
                 append_audit_event(
                     session,
                     workflow_id=workflow.id,
@@ -2753,6 +3036,30 @@ class ControlPlaneService:
                         "plan_digest": plan_digest,
                         "revision": revision,
                         "policy_version": policy_version,
+                        "expires_at": approval.expires_at.isoformat(),
+                    },
+                )
+            else:
+                if decision is ApprovalDecision.REJECTED:
+                    approval.consumed_at = datetime.now(UTC)
+                append_audit_event(
+                    session,
+                    workflow_id=workflow.id,
+                    event_type=(
+                        "deployment.rollback_approved"
+                        if decision is ApprovalDecision.APPROVED
+                        else "deployment.rollback_rejected"
+                    ),
+                    actor_id=approver_id,
+                    resource_type="approval",
+                    resource_id=approval.id,
+                    outcome=decision.value,
+                    payload={
+                        "deployment_attempt_id": deployment_attempt_id,
+                        "environment_id": environment_id,
+                        "plan_digest": plan_digest,
+                        "revision": revision,
+                        "rollback_reference": target.strip(),
                         "expires_at": approval.expires_at.isoformat(),
                     },
                 )
@@ -3452,6 +3759,45 @@ class ControlPlaneService:
                 },
             )
 
+    def _fail_local_rollback(
+        self,
+        rollback_id: str,
+        status: RollbackStatus,
+        error_code: str,
+        *,
+        target_contacted: bool,
+        recovery_duration_ms: int,
+    ) -> None:
+        if status not in {RollbackStatus.FAILED, RollbackStatus.UNKNOWN}:
+            raise ValueError("invalid local rollback failure status")
+        with self.session_factory() as session, session.begin():
+            rollback = session.get(DeploymentRollbackRecord, rollback_id, with_for_update=True)
+            if rollback is None or rollback.status != RollbackStatus.RUNNING.value:
+                return
+            rollback.status = status.value
+            rollback.error_code = error_code[:64]
+            rollback.completed_at = datetime.now(UTC)
+            rollback.recovery_duration_ms = max(recovery_duration_ms, 0)
+            rollback.evidence = {
+                "credential_requested": True,
+                "error": "local rollback did not produce verified recovery",
+                "target_contacted": target_contacted,
+            }
+            append_audit_event(
+                session,
+                workflow_id=rollback.workflow_id,
+                event_type="deployment.rollback_failed",
+                actor_id="orchestrator",
+                resource_type="deployment_rollback",
+                resource_id=rollback.id,
+                outcome=status.value,
+                payload={
+                    "error_code": rollback.error_code,
+                    "recovery_duration_ms": rollback.recovery_duration_ms,
+                    "target_contacted": target_contacted,
+                },
+            )
+
     @staticmethod
     def _credential_handle_dict(handle: WorkloadCredentialHandle) -> dict[str, Any]:
         return {
@@ -3542,6 +3888,26 @@ class ControlPlaneService:
         }
 
     @staticmethod
+    def _deployment_rollback_dict(record: DeploymentRollbackRecord) -> dict[str, Any]:
+        return {
+            "id": record.id,
+            "workflow_id": record.workflow_id,
+            "attempt_id": record.attempt_id,
+            "approval_id": record.approval_id,
+            "actor_id": record.actor_id,
+            "rollback_reference": record.rollback_reference,
+            "decision": record.decision,
+            "rationale": record.rationale,
+            "status": record.status,
+            "operation_reference": record.operation_reference,
+            "evidence": record.evidence,
+            "error_code": record.error_code,
+            "recovery_duration_ms": record.recovery_duration_ms,
+            "created_at": record.created_at.isoformat(),
+            "completed_at": record.completed_at.isoformat() if record.completed_at else None,
+        }
+
+    @staticmethod
     def _is_sha256_digest(value: str) -> bool:
         suffix = value.removeprefix("sha256:")
         return (
@@ -3617,6 +3983,7 @@ class ControlPlaneService:
             "policy_version": approval.policy_version,
             "environment_id": approval.environment_id,
             "plan_digest": approval.plan_digest,
+            "deployment_attempt_id": approval.deployment_attempt_id,
             "approver_id": approval.approver_id,
             "decision": approval.decision,
             "rationale": approval.rationale,

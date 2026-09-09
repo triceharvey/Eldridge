@@ -188,7 +188,7 @@ def test_kubernetes_broker_requires_explicit_opt_in_before_requesting_token() ->
     assert requester.calls == []
 
 
-def test_kubernetes_broker_factory_creates_one_exact_plan_binding() -> None:
+def test_kubernetes_broker_factory_creates_one_exact_request_binding() -> None:
     factory = KubernetesTokenRequestBrokerFactory(
         requester=StubTokenRequester(),
         environment_id="eldridge-local-k3d",
@@ -198,16 +198,19 @@ def test_kubernetes_broker_factory_creates_one_exact_plan_binding() -> None:
         audience="eldridge-local-k3d",
         issuer="https://kubernetes.default.svc.cluster.local",
         resource_scope=("namespace/eldridge-validation",),
-        operation=CredentialOperation.OBSERVE,
+        allowed_operations=frozenset({CredentialOperation.OBSERVE}),
         enabled=False,
     )
 
-    broker = factory.for_plan("c" * 64)
+    request = _kubernetes_request(plan_digest="c" * 64)
+    broker = factory.for_request(request)
 
     assert broker.plan_digest == "c" * 64
     assert broker.enabled is False
     with pytest.raises(ValidationError, match="SHA-256"):
-        factory.for_plan("not-a-digest")
+        factory.for_request(_kubernetes_request(plan_digest="not-a-digest"))
+    with pytest.raises(AuthorizationError, match="operation"):
+        factory.for_request(_kubernetes_request(operation=CredentialOperation.ROLLBACK))
 
 
 def test_kubernetes_broker_returns_only_validated_redacted_metadata() -> None:

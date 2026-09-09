@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -14,6 +16,7 @@ from control_plane.credentials import (
 )
 from control_plane.deployment import (
     CredentialedDeploymentRun,
+    CredentialedRollbackRun,
     DeploymentExecution,
     DeploymentObservation,
     DeploymentOperationKind,
@@ -140,18 +143,7 @@ class LocalK3dConfigMapAdapter:
         ):
             raise ValidationError("local k3d idempotency key is invalid")
         request = self.credential_request(plan)
-        if (
-            handle.environment_id != request.environment_id
-            or handle.plan_digest != request.plan_digest
-            or handle.operation is not request.operation
-            or handle.audience != request.audience
-            or handle.subject != request.subject
-            or handle.resource_scope != request.resource_scope
-            or handle.simulated
-            or handle.expires_at - handle.issued_at != timedelta(seconds=600)
-            or handle.expires_at <= datetime.now(UTC)
-        ):
-            raise ValidationError("credential handle does not match deployment plan")
+        self._validate_handle(request, handle)
         headers = {"Authorization": f"Bearer {credential}", "Accept": "application/json"}
         current = self._read(headers, after_change=False)
         previous = self._release_data(current)
@@ -226,6 +218,146 @@ class LocalK3dConfigMapAdapter:
             observation=observation,
             verification=verification,
         )
+
+    def rollback_credential_request(self, plan: DeploymentPlan) -> WorkloadCredentialRequest:
+        request = self.credential_request(plan)
+        return WorkloadCredentialRequest(
+            environment_id=request.environment_id,
+            adapter_id=request.adapter_id,
+            plan_digest=request.plan_digest,
+            operation=CredentialOperation.ROLLBACK,
+            audience=request.audience,
+            subject=request.subject,
+            resource_scope=request.resource_scope,
+            lifetime_seconds=request.lifetime_seconds,
+        )
+
+    def rollback_with_credential(
+        self,
+        plan: DeploymentPlan,
+        previous_release: dict[str, str],
+        credential: str,
+        handle: WorkloadCredentialHandle,
+        *,
+        idempotency_key: str,
+    ) -> CredentialedRollbackRun:
+        self.validate_plan(plan)
+        self._validate_release_snapshot(previous_release)
+        if previous_release.get("plan_digest") == plan.digest:
+            raise ValidationError("rollback snapshot cannot equal the failed deployment plan")
+        if (
+            not idempotency_key
+            or len(idempotency_key) > 128
+            or not re.fullmatch(r"[A-Za-z0-9._-]+", idempotency_key)
+        ):
+            raise ValidationError("local k3d rollback idempotency key is invalid")
+        request = self.rollback_credential_request(plan)
+        self._validate_handle(request, handle)
+        headers = {"Authorization": f"Bearer {credential}", "Accept": "application/json"}
+        current = self._read(headers, after_change=False)
+        current_data = self._release_data(current)
+        changed = current_data != previous_release
+        if changed:
+            metadata = current.get("metadata")
+            if not isinstance(metadata, dict) or not metadata.get("resourceVersion"):
+                raise ValidationError("release marker lacks a Kubernetes resource version")
+            body = {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {
+                    "name": "eldridge-release",
+                    "namespace": self.namespace,
+                    "resourceVersion": metadata["resourceVersion"],
+                    "labels": {"app.kubernetes.io/managed-by": "eldridge"},
+                },
+                "data": previous_release,
+            }
+            try:
+                response = self.client.put(self.path, headers=headers, json=body)
+            except (httpx.TimeoutException, httpx.TransportError):
+                raise DeploymentOutcomeUnknownError(
+                    "local k3d rollback outcome is unknown and requires reconciliation"
+                ) from None
+            if response.status_code != 200:
+                raise ValidationError("local k3d rollback was rejected before confirmation")
+
+        observed = self._read(headers, after_change=changed)
+        observed_data = self._release_data(observed)
+        passed = observed_data == previous_release
+        observation = DeploymentObservation(
+            observed_revision=str(observed_data.get("revision", "")),
+            evidence={
+                "artifact_digest": observed_data.get("artifact_digest"),
+                "plan_digest": observed_data.get("plan_digest"),
+                "resource_id": self.resource_id,
+                "restored_snapshot_digest": self._snapshot_digest(observed_data),
+            },
+        )
+        verification = DeploymentVerification(
+            passed=passed,
+            observed_revision=observation.observed_revision,
+            evidence={
+                "failed_plan_absent": observed_data.get("plan_digest") != plan.digest,
+                "restored_snapshot_matches": passed,
+                "restored_snapshot_digest": self._snapshot_digest(observed_data),
+            },
+        )
+        execution = DeploymentExecution(
+            operation_reference=f"k3d-configmap-rollback:{plan.digest}:{idempotency_key}",
+            simulated=False,
+            changed=changed,
+            evidence={
+                "adapter_id": self.adapter_id,
+                "credential_reference": handle.reference,
+                "external_target_contacted": True,
+                "failed_plan_digest": plan.digest,
+                "resource": self.resource_id,
+                "rollback_reference": self.rollback_reference,
+                "target_snapshot_digest": self._snapshot_digest(previous_release),
+            },
+        )
+        return CredentialedRollbackRun(
+            execution=execution,
+            observation=observation,
+            verification=verification,
+        )
+
+    @staticmethod
+    def _validate_handle(
+        request: WorkloadCredentialRequest, handle: WorkloadCredentialHandle
+    ) -> None:
+        if (
+            handle.environment_id != request.environment_id
+            or handle.plan_digest != request.plan_digest
+            or handle.operation is not request.operation
+            or handle.audience != request.audience
+            or handle.subject != request.subject
+            or handle.resource_scope != request.resource_scope
+            or handle.simulated
+            or handle.expires_at - handle.issued_at != timedelta(seconds=600)
+            or handle.expires_at <= datetime.now(UTC)
+        ):
+            raise ValidationError("credential handle does not match deployment operation")
+
+    @classmethod
+    def _validate_release_snapshot(cls, snapshot: dict[str, str]) -> None:
+        if not snapshot:
+            return
+        if set(snapshot) != {"artifact_digest", "idempotency_key", "plan_digest", "revision"}:
+            raise ValidationError("recorded rollback snapshot fields do not match policy")
+        if (
+            not re.fullmatch(r"sha256:[0-9a-f]{64}", snapshot["artifact_digest"])
+            or not re.fullmatch(r"[0-9a-f]{64}", snapshot["plan_digest"])
+            or not re.fullmatch(r"[0-9a-f]{40}", snapshot["revision"])
+            or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", snapshot["idempotency_key"])
+        ):
+            raise ValidationError("recorded rollback snapshot values do not match policy")
+
+    @staticmethod
+    def _snapshot_digest(snapshot: dict[str, str]) -> str:
+        return hashlib.sha256(
+            json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
 
     def _read(self, headers: dict[str, str], *, after_change: bool) -> dict[str, object]:
         try:

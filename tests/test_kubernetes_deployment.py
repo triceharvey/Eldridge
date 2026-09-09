@@ -27,6 +27,7 @@ from control_plane.deployment import (
 from control_plane.domain import (
     ApprovalAction,
     ApprovalDecision,
+    AuthorizationError,
     ConflictError,
     DeploymentOutcomeUnknownError,
     ValidationError,
@@ -43,10 +44,18 @@ TOKEN = "phase-4-3-secret-token-canary"  # noqa: S105 - redaction-test canary
 
 
 class ReleaseMarkerTransport:
-    def __init__(self, *, fail_put: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_put: bool = False,
+        fail_put_numbers: frozenset[int] = frozenset(),
+        tamper_after_first_put: bool = False,
+    ) -> None:
         self.data: dict[str, str] = {}
         self.resource_version = 1
         self.fail_put = fail_put
+        self.fail_put_numbers = fail_put_numbers
+        self.tamper_after_first_put = tamper_after_first_put
         self.put_count = 0
         self.authorization_headers: list[str] = []
 
@@ -68,11 +77,13 @@ class ReleaseMarkerTransport:
             )
         if request.method == "PUT":
             self.put_count += 1
-            if self.fail_put:
-                raise httpx.ReadTimeout("ambiguous update", request=request)
             payload = json.loads(request.content)
             self.data = dict(payload["data"])
             self.resource_version += 1
+            if self.tamper_after_first_put and self.put_count == 1:
+                self.data["revision"] = "e" * 40
+            if self.fail_put or self.put_count in self.fail_put_numbers:
+                raise httpx.ReadTimeout("ambiguous update", request=request)
             return httpx.Response(200, json=payload)
         return httpx.Response(405)
 
@@ -222,10 +233,10 @@ class StubBrokerFactory:
 
     def __init__(self, broker: StubSessionBroker) -> None:
         self.broker = broker
-        self.plan_digests: list[str] = []
+        self.requests: list[WorkloadCredentialRequest] = []
 
-    def for_plan(self, plan_digest: str) -> StubSessionBroker:
-        self.plan_digests.append(plan_digest)
+    def for_request(self, request: WorkloadCredentialRequest) -> StubSessionBroker:
+        self.requests.append(request)
         return self.broker
 
 
@@ -349,7 +360,7 @@ def test_service_executes_only_exact_approved_local_plan(
     assert result["result"]["credential"]["plan_digest"] == plan["digest"]
     assert TOKEN not in repr(result)
     assert len(broker.requests) == 1
-    assert broker_factory.plan_digests == [plan["digest"]]
+    assert [request.plan_digest for request in broker_factory.requests] == [plan["digest"]]
     current = service.get_workflow(str(workflow["id"]), principal_id="dev-operator")
     assert current["state"] == WorkflowState.DEPLOYED.value
     with session_factory() as session:
@@ -387,7 +398,7 @@ def test_service_contains_ambiguous_local_update_without_retry(
 
     assert transport.put_count == 1
     assert len(broker.requests) == 1
-    assert broker_factory.plan_digests == [plan["digest"]]
+    assert [request.plan_digest for request in broker_factory.requests] == [plan["digest"]]
     with session_factory() as session:
         attempt = session.scalar(
             select(DeploymentAttemptRecord).where(
@@ -395,4 +406,137 @@ def test_service_contains_ambiguous_local_update_without_retry(
             )
         )
         assert attempt is not None and attempt.status == "UNKNOWN"
+        assert verify_audit_chain(session, str(workflow["id"]))
+
+
+def _contained_local_deployment(
+    session_factory: sessionmaker[Session],
+    transport: ReleaseMarkerTransport,
+) -> tuple[
+    ControlPlaneService,
+    dict[str, object],
+    dict[str, object],
+    dict[str, object],
+    StubSessionBroker,
+    StubBrokerFactory,
+]:
+    service, workflow, plan, broker, broker_factory = _approved_local_plan(
+        session_factory, transport=transport
+    )
+    attempt = service.execute_local_deployment(
+        workflow_id=str(workflow["id"]),
+        plan_id=str(plan["id"]),
+        actor_id="dev-operator",
+        idempotency_key="phase-4-4-failed-verification",
+    )
+    assert attempt["status"] == "ROLLBACK_REQUIRED"
+    assert (
+        service.get_workflow(str(workflow["id"]), principal_id="dev-operator")["state"]
+        == WorkflowState.ROLLBACK_REQUIRED.value
+    )
+    return service, workflow, plan, attempt, broker, broker_factory
+
+
+def _approve_rollback(
+    service: ControlPlaneService,
+    workflow: dict[str, object],
+    plan: dict[str, object],
+    attempt: dict[str, object],
+) -> dict[str, object]:
+    return service.approve(
+        workflow_id=str(workflow["id"]),
+        approver_id="dev-operator",
+        action=ApprovalAction.ROLLBACK,
+        target="restore-previous-release-marker-v1",
+        revision=MERGED_REVISION,
+        decision=ApprovalDecision.APPROVED,
+        rationale="Restore the exact pre-deployment release-marker snapshot.",
+        environment_id="eldridge-local-k3d",
+        plan_digest=str(plan["digest"]),
+        deployment_attempt_id=str(attempt["id"]),
+    )
+
+
+def test_service_requires_exact_rollback_approval_and_verifies_recovery(
+    session_factory: sessionmaker[Session],
+) -> None:
+    transport = ReleaseMarkerTransport(tamper_after_first_put=True)
+    service, workflow, plan, attempt, broker, broker_factory = _contained_local_deployment(
+        session_factory, transport
+    )
+
+    with pytest.raises(AuthorizationError, match="exact unconsumed rollback approval"):
+        service.execute_local_rollback(
+            workflow_id=str(workflow["id"]),
+            attempt_id=str(attempt["id"]),
+            actor_id="dev-operator",
+            idempotency_key="phase-4-4-no-approval",
+        )
+    approval = _approve_rollback(service, workflow, plan, attempt)
+    path = f"/workflows/{workflow['id']}/deployment-attempts/{attempt['id']}/rollback"
+    with TestClient(create_app(service)) as client:
+        response = client.post(path, json={"idempotency_key": "phase-4-4-rollback"})
+        replay_response = client.post(path, json={"idempotency_key": "phase-4-4-rollback"})
+        listed = client.get(f"/workflows/{workflow['id']}/deployment-rollbacks")
+
+    assert response.status_code == 200
+    assert replay_response.status_code == 200
+    rollback = response.json()
+    assert replay_response.json()["id"] == rollback["id"]
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1 and listed.json()[0]["id"] == rollback["id"]
+    assert rollback["approval_id"] == approval["id"]
+    assert rollback["status"] == "SUCCEEDED"
+    assert rollback["evidence"]["changed"] is True
+    assert rollback["evidence"]["verification"]["restored_snapshot_matches"] is True
+    assert rollback["recovery_duration_ms"] >= 0
+    assert transport.data == {}
+    assert transport.put_count == 2
+    assert [request.operation for request in broker.requests] == [
+        CredentialOperation.APPLY_PLAN,
+        CredentialOperation.ROLLBACK,
+    ]
+    assert [request.operation for request in broker_factory.requests] == [
+        CredentialOperation.APPLY_PLAN,
+        CredentialOperation.ROLLBACK,
+    ]
+    assert TOKEN not in repr(rollback)
+    current = service.get_workflow(str(workflow["id"]), principal_id="dev-operator")
+    assert current["state"] == WorkflowState.ROLLED_BACK.value
+    with session_factory() as session:
+        assert verify_audit_chain(session, str(workflow["id"]))
+
+
+def test_service_contains_ambiguous_rollback_without_retry(
+    session_factory: sessionmaker[Session],
+) -> None:
+    transport = ReleaseMarkerTransport(fail_put_numbers=frozenset({2}), tamper_after_first_put=True)
+    service, workflow, plan, attempt, broker, broker_factory = _contained_local_deployment(
+        session_factory, transport
+    )
+    _approve_rollback(service, workflow, plan, attempt)
+
+    with pytest.raises(DeploymentOutcomeUnknownError, match="rollback outcome is unknown"):
+        service.execute_local_rollback(
+            workflow_id=str(workflow["id"]),
+            attempt_id=str(attempt["id"]),
+            actor_id="dev-operator",
+            idempotency_key="phase-4-4-unknown-rollback",
+        )
+    with pytest.raises(ConflictError, match="not replayable"):
+        service.execute_local_rollback(
+            workflow_id=str(workflow["id"]),
+            attempt_id=str(attempt["id"]),
+            actor_id="dev-operator",
+            idempotency_key="phase-4-4-unknown-rollback",
+        )
+
+    rollbacks = service.list_deployment_rollbacks(str(workflow["id"]), principal_id="dev-operator")
+    assert len(rollbacks) == 1 and rollbacks[0]["status"] == "UNKNOWN"
+    assert transport.put_count == 2
+    assert len(broker.requests) == 2
+    assert len(broker_factory.requests) == 2
+    current = service.get_workflow(str(workflow["id"]), principal_id="dev-operator")
+    assert current["state"] == WorkflowState.ROLLBACK_REQUIRED.value
+    with session_factory() as session:
         assert verify_audit_chain(session, str(workflow["id"]))
