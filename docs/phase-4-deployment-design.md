@@ -171,6 +171,15 @@ application deployment remain disabled.
 Implement one narrowly scoped adapter for the selected target. Prove revision binding,
 idempotency, least privilege, timeout containment, observation, and post-deploy verification.
 
+Status: implemented and validated locally on 2026-09-09. The selected environment is
+`eldridge-local-k3d`; the only mutable resource is the pre-created
+`configmap/eldridge-release`. The fixed probes verify revision, plan digest, and artifact digest,
+and the recorded rollback policy is `restore-previous-release-marker-v1`. The service commits
+intent and consumes the exact approval before using a fresh plan-bound broker. The credential is
+available only inside the adapter callback, and target evidence is observed separately from the
+update response. The first live operation changed and verified the marker; its exact replay
+verified without another update. Ambiguous writes become non-replayable `UNKNOWN` attempts.
+
 ### Phase 4.4 — Recovery exercise
 
 Inject a failed verification, require a rollback decision, execute the bounded rollback, and
@@ -184,6 +193,6 @@ the evidence and residual risk.
 3. The first non-production target is local Docker/k3d with a USD 0 infrastructure ceiling.
 4. The local Kubernetes TokenRequest broker and exact 600-second lifetime were approved and
    qualified on 2026-09-08; SPIFFE/SPIRE remains an optional future federation layer.
-5. Approve environment inventory, verification probes, and rollback policy before any real
-   deployment.
+5. The owner authorized the Phase 4.3 local environment inventory, fixed verification probes,
+   and rollback-policy reference on 2026-09-09. This does not authorize rollback execution.
 6. Approve a separate production-readiness review after the non-production recovery exercise.

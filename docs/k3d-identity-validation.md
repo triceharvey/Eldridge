@@ -1,4 +1,4 @@
-# Ephemeral k3d Identity-Boundary Validation
+# Ephemeral k3d Identity and Deployment-Boundary Validation
 
 ## Result
 
@@ -26,11 +26,19 @@ The reproducible assets are:
 | Sensitive/write access | `get secrets` and `create pods` in `eldridge-validation`: denied |
 | Lateral access | `get pods` in `eldridge-denied` and `kube-system`: denied |
 | Cluster-scope access | `create namespaces`: denied |
+| Exact release-marker access | `get` and `update` `configmap/eldridge-release`: allowed |
+| Resource widening | create any ConfigMap, update another ConfigMap, and delete the release marker: denied |
 | Token subject | `system:serviceaccount:eldridge-validation:deployment-worker` |
 | Token audience | `eldridge-local-k3d` |
 | Token lifetime | 600 seconds |
 | Persistent token mount | Disabled with `automountServiceAccountToken: false` |
 | Teardown | No named cluster, container, network, or image volume remained |
+
+On 2026-09-09, the same ephemeral boundary completed the Phase 4.3 release-marker exercise
+against Git revision `85aafcb89d46a7798ae0462fbdeb3cada4e70fc6`. A short-lived token was
+delivered only inside the adapter callback. The first operation updated and verified the exact
+revision, plan digest, and artifact digest; the replay verified the same state without another
+update. Four intended RBAC checks were allowed and eight widening checks were denied.
 
 The token is now requested through Eldridge's concrete `KubernetesTokenRequestBroker`, validated
 in memory, discarded, and never printed or persisted. Only the non-secret reference scheme,
@@ -55,7 +63,8 @@ trap deletes only that exact cluster name and its validated temporary directory,
 an assertion failure. Container images remain in the local Docker cache so later reproductions do
 not require another pull.
 
-This exercise proves the local Kubernetes identity, concrete credential-broker, redaction, and
-teardown boundaries. It does not authorize `tofu apply`, deploy the Eldridge application, create
-a hosted environment, or satisfy Phase 4.3 deployment-adapter and Phase 4.4 recovery-exercise
-criteria. SPIFFE/SPIRE remains deferred unless federation needs justify it.
+This exercise proves the local Kubernetes identity, concrete credential-broker, bounded Phase 4.3
+deployment adapter, redaction, idempotency, verification, and teardown boundaries. It does not
+authorize `tofu apply`, deploy the Eldridge application, create a hosted environment, or satisfy
+the Phase 4.4 recovery-exercise criteria. SPIFFE/SPIRE remains deferred unless federation needs
+justify it.

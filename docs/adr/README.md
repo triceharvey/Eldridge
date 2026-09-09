@@ -13,5 +13,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0009: OpenTofu infrastructure layer](0009-opentofu-infrastructure-layer.md)
 - [ADR-0010: Zero-cost local Phase 4 target](0010-zero-cost-local-phase-4-target.md)
 - [ADR-0011: Local Kubernetes TokenRequest broker](0011-local-kubernetes-token-request-broker.md)
+- [ADR-0012: Bounded local k3d deployment adapter](0012-bounded-local-k3d-deployment-adapter.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.
