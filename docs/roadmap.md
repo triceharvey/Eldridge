@@ -46,7 +46,7 @@ Current rough status: Phase 0 and Phase 1 are complete; Phase 2 is about 95% com
 
 Design this phase separately before implementation. Add environment inventory, deployment plans, scoped approval, short-lived deployment credentials, post-deploy verification, rollback decision support, and stronger secret management. Begin with a non-production environment.
 
-The project owner approved the provider-neutral design in `docs/phase-4-deployment-design.md` and ADR 0008 on 2026-09-08. Phase 4.1 is implemented locally with immutable environment and plan records, exact deployment approvals, durable attempts and verification, and a no-credential dry-run adapter. No hosting provider, cloud resource, paid service, credential, or real deployment is authorized.
+The project owner approved the provider-neutral design in `docs/phase-4-deployment-design.md` and ADR 0008 on 2026-09-08. Phase 4.1 is implemented locally with immutable environment and plan records, exact deployment approvals, durable attempts and verification, and a no-credential dry-run adapter. OpenTofu was approved as the provider-neutral infrastructure layer in ADR 0009 on 2026-09-08. The managed Azure and open-source K3s profiles remain proposals; no hosting provider, cloud resource, paid service, credential, or real deployment is authorized.
 
 Exit criteria: the control plane cannot deploy without a valid environment- and revision-bound approval; credentials are short lived; partial deployment enters reconciliation or `ROLLBACK_REQUIRED`; recovery is exercised.
 
@@ -73,7 +73,9 @@ For one engineer working consistently with AI assistance, a defensible rough ran
 | Git | 2 | Authoritative artifacts, revisions, branches, and worktree isolation |
 | Prometheus/OpenTelemetry libraries | 3 | Standard metrics/tracing interfaces after useful signals exist |
 
-Redis is not justified for the MVP. Kubernetes, Terraform, Grafana, and a secret manager are valuable later, but adding them before the workflow and security invariants work would increase surface area without proving the control plane.
+Redis is not justified for the MVP. OpenTofu is approved for Phase 4 infrastructure planning,
+but a Kubernetes distribution, Grafana, and a secret manager remain target-specific additions
+that require demonstrated need and explicit approval.
 
 ## Decisions requiring human approval
 

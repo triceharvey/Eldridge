@@ -145,6 +145,9 @@ contact an external target and does not move the workflow to `DEPLOYED`.
 
 Add one credential-broker interface and a fake broker. Qualify one real workload-identity
 mechanism only after the hosting target is selected and its trust policy is reviewed.
+OpenTofu is the approved provider-neutral infrastructure layer; ADR 0009 defines the saved-plan,
+version-pinning, state-security, and exact-apply boundary. The first managed or open-source
+hosting profile remains an owner decision.
 
 ### Phase 4.3 — One non-production adapter
 
@@ -160,8 +163,9 @@ the evidence and residual risk.
 ## Decisions still requiring owner approval
 
 1. The provider-neutral Phase 4 architecture was approved on 2026-09-08.
-2. Select the first non-production hosting target and cost ceiling before Phase 4.2.
-3. Select its workload-identity mechanism and maximum credential lifetime.
-4. Approve environment inventory, verification probes, and rollback policy before any real
+2. OpenTofu was approved as the provider-neutral infrastructure layer on 2026-09-08.
+3. Select the first non-production hosting target and cost ceiling before real qualification.
+4. Select its workload-identity mechanism and maximum credential lifetime.
+5. Approve environment inventory, verification probes, and rollback policy before any real
    deployment.
-5. Approve a separate production-readiness review after the non-production recovery exercise.
+6. Approve a separate production-readiness review after the non-production recovery exercise.

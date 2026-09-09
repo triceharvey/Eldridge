@@ -149,6 +149,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 3 acceptance record](docs/phase-3-acceptance.md)
 - [Phase 4 controlled deployment design](docs/phase-4-deployment-design.md)
 - [Phase 4.1 acceptance record](docs/phase-4-1-acceptance.md)
+- [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [Onboarding other projects](docs/project-onboarding.md)
 - [Proposed data model](docs/data-model.md)
 - [Threat model](docs/threat-model.md)
