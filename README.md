@@ -109,6 +109,13 @@ subject- and audience-bound ten-minute projected service-account token, and auto
 The token was never logged or persisted, and no named cluster, container, network, or volume
 remained afterward.
 
+Phase 4.2 now connects that mechanism to the `CredentialBroker` contract through an explicitly
+enabled Kubernetes TokenRequest broker. It rejects any environment, adapter, operation, scope,
+audience, subject, digest, or lifetime mismatch before issuance; revalidates the returned claims;
+discards the token; and returns only a random opaque reference plus sanitized metadata. The
+normal runtime still installs the deny-all broker, and no credential-requiring deployment adapter
+is enabled.
+
 ## Run locally
 
 Create an isolated Python environment and install the project:
@@ -171,6 +178,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 3 acceptance record](docs/phase-3-acceptance.md)
 - [Phase 4 controlled deployment design](docs/phase-4-deployment-design.md)
 - [Phase 4.1 acceptance record](docs/phase-4-1-acceptance.md)
+- [Phase 4.2 acceptance record](docs/phase-4-2-acceptance.md)
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)

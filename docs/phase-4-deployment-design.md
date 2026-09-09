@@ -149,12 +149,14 @@ OpenTofu is the approved provider-neutral infrastructure layer; ADR 0009 defines
 version-pinning, state-security, and exact-apply boundary. ADR 0010 selects the zero-cost local
 profile while leaving the first hosted profile as a later owner decision.
 
-The owner approved a zero-dollar local Docker/k3d target on 2026-09-08. The first implementation
-uses a deny-by-default credential broker and a metadata-only fake broker; it creates no token,
-contacts no issuer, and exposes no credential material. Local SPIFFE/SPIRE qualification remains
-a later part of this phase. A temporary hosted exercise has a separate maximum total budget of
-approximately USD 5 and still requires a selected provider, exact plan, and execution approval
-before any resource is created. Azure and persistent hosted K3s remain future alternatives.
+The owner approved a zero-dollar local Docker/k3d target on 2026-09-08. The implementation uses a
+deny-by-default credential broker, a metadata-only fake broker, and an explicitly enabled local
+Kubernetes TokenRequest broker. The real broker validates exact request and returned-token
+bindings, discards the token, and exposes only sanitized handle metadata. SPIFFE/SPIRE is deferred
+until cross-workload federation is justified. A temporary hosted exercise has a separate maximum
+total budget of approximately USD 5 and still requires a selected provider, exact plan, and
+execution approval before any resource is created. Azure and persistent hosted K3s remain future
+alternatives.
 
 The saved-plan validation slice is implemented with pinned CLI/provider policy, exact resource
 and action allowlists, destructive-change and drift rejection, sensitive-artifact containment,
@@ -180,7 +182,8 @@ the evidence and residual risk.
 1. The provider-neutral Phase 4 architecture was approved on 2026-09-08.
 2. OpenTofu was approved as the provider-neutral infrastructure layer on 2026-09-08.
 3. The first non-production target is local Docker/k3d with a USD 0 infrastructure ceiling.
-4. Qualify local SPIFFE/SPIRE and approve its real maximum credential lifetime.
+4. The local Kubernetes TokenRequest broker and exact 600-second lifetime were approved and
+   qualified on 2026-09-08; SPIFFE/SPIRE remains an optional future federation layer.
 5. Approve environment inventory, verification probes, and rollback policy before any real
    deployment.
 6. Approve a separate production-readiness review after the non-production recovery exercise.

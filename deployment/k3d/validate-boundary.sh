@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CLUSTER_NAME="eldridge-phase4-validation"
 K3S_IMAGE="rancher/k3s@sha256:2074403abe1bded11ef3dde09d457e13be8e0b64c218b1c4f8269b4565cfbc65"
 VALIDATION_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/eldridge-k3d.XXXXXX")"
@@ -79,31 +80,9 @@ assert_permission no get pods eldridge-denied
 assert_permission no get pods kube-system
 assert_permission no create namespaces default
 
-kubectl create token deployment-worker \
-  --namespace eldridge-validation \
-  --audience eldridge-local-k3d \
-  --duration 10m | python3 -c '
-import base64
-import json
-import sys
-
-token = sys.stdin.read().strip()
-parts = token.split(".")
-if len(parts) != 3:
-    raise SystemExit("projected token is not a JWT")
-payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
-expected_subject = "system:serviceaccount:eldridge-validation:deployment-worker"
-audience = payload.get("aud", [])
-audience = [audience] if isinstance(audience, str) else audience
-lifetime = int(payload["exp"]) - int(payload["iat"])
-if payload.get("sub") != expected_subject:
-    raise SystemExit("projected token subject is not bound")
-if audience != ["eldridge-local-k3d"]:
-    raise SystemExit("projected token audience is not bound")
-if lifetime < 1 or lifetime > 600:
-    raise SystemExit("projected token lifetime exceeds the Kubernetes ten-minute minimum")
-print(json.dumps({"aud": audience, "sub": payload["sub"], "lifetime_seconds": lifetime}, sort_keys=True))
-'
+PYTHONPATH="${PROJECT_ROOT}/src" python3 "${SCRIPT_DIR}/validate-broker.py" \
+  --kubeconfig "${VALIDATION_KUBECONFIG}" \
+  --manifest "${SCRIPT_DIR}/identity-boundary.yaml"
 
 docker image inspect \
   "${K3S_IMAGE}" \

@@ -32,8 +32,10 @@ The reproducible assets are:
 | Persistent token mount | Disabled with `automountServiceAccountToken: false` |
 | Teardown | No named cluster, container, network, or image volume remained |
 
-The token itself was piped directly into a local decoder and was never printed or persisted.
-Only its audience, subject, and calculated lifetime were emitted. Kubernetes 1.35 rejected a
+The token is now requested through Eldridge's concrete `KubernetesTokenRequestBroker`, validated
+in memory, discarded, and never printed or persisted. Only the non-secret reference scheme,
+broker and request bindings, audience, subject, issuance and expiry, and calculated lifetime are
+emitted. Kubernetes 1.35 rejected a
 five-minute TokenRequest because the API requires at least ten minutes, so this validation uses
 the enforced 600-second minimum. Eldridge's simulated credential broker retains its separate
 five-minute policy because no Kubernetes TokenRequest is issued there.
@@ -53,6 +55,7 @@ trap deletes only that exact cluster name and its validated temporary directory,
 an assertion failure. Container images remain in the local Docker cache so later reproductions do
 not require another pull.
 
-This exercise proves the local Kubernetes identity and teardown boundary. It does not authorize
-`tofu apply`, deploy the Eldridge application, qualify SPIFFE/SPIRE, create a hosted environment,
-or satisfy Phase 4.3 deployment-adapter and Phase 4.4 recovery-exercise criteria.
+This exercise proves the local Kubernetes identity, concrete credential-broker, redaction, and
+teardown boundaries. It does not authorize `tofu apply`, deploy the Eldridge application, create
+a hosted environment, or satisfy Phase 4.3 deployment-adapter and Phase 4.4 recovery-exercise
+criteria. SPIFFE/SPIRE remains deferred unless federation needs justify it.
