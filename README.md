@@ -103,6 +103,12 @@ fixtures and rejects unpinned providers, destructive actions, imports, provision
 modules, drift, sensitive markers, changed outputs, and any cost above zero. Its local adapter is
 simulation-only and proves that it starts no subprocess and contacts no target.
 
+The ephemeral k3d identity exercise is also complete. A digest-pinned, single-server local
+cluster verified two intended namespace permissions, five sensitive/write/lateral denials, a
+subject- and audience-bound ten-minute projected service-account token, and automatic teardown.
+The token was never logged or persisted, and no named cluster, container, network, or volume
+remained afterward.
+
 ## Run locally
 
 Create an isolated Python environment and install the project:
@@ -168,6 +174,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)
+- [Ephemeral k3d identity-boundary validation](docs/k3d-identity-validation.md)
 - [Onboarding other projects](docs/project-onboarding.md)
 - [Proposed data model](docs/data-model.md)
 - [Threat model](docs/threat-model.md)

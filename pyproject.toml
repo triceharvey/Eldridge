@@ -45,6 +45,7 @@ addopts = "-ra --strict-markers"
 testpaths = ["tests"]
 markers = [
   "docker: requires a running Docker daemon and the pinned sandbox image",
+  "k3d: creates and automatically destroys the named local k3d validation cluster",
   "live_provider: incurs external network activity and may incur provider cost",
   "postgres: requires CONTROL_PLANE_TEST_DATABASE_URL pointing to PostgreSQL",
 ]

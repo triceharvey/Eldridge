@@ -60,6 +60,16 @@ must be justified by a demonstrated need rather than installed as a platform bun
 Model output may propose a change for review, but cannot widen providers, modules, resource
 scopes, identity permissions, cost limits, or execute `tofu apply`.
 
+## Local Kubernetes evidence
+
+The ephemeral k3d exercise passed on 2026-09-08 using one digest-pinned K3s server. Its service
+account has read-only access to pods and deployments in one validation namespace; secret access,
+pod creation, access to another namespace or `kube-system`, and namespace creation were all
+denied. The projected token was bound to the exact service-account subject and local audience.
+Kubernetes enforced a ten-minute minimum lifetime. The token was neither logged nor persisted,
+and the named cluster and associated Docker objects were removed after validation. See the
+ephemeral k3d identity-boundary validation record for exact evidence and reproduction controls.
+
 ## Decision still required
 
 Before implementing the first hosted adapter, the owner must choose between:

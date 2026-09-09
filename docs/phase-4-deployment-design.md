@@ -159,7 +159,10 @@ before any resource is created. Azure and persistent hosted K3s remain future al
 The saved-plan validation slice is implemented with pinned CLI/provider policy, exact resource
 and action allowlists, destructive-change and drift rejection, sensitive-artifact containment,
 SHA-256 plan/lock bindings, a zero-cost check, sanitized evidence, and a no-subprocess local
-simulation adapter. Real OpenTofu extraction and k3d execution remain disabled.
+simulation adapter. A bounded ephemeral k3d exercise also passed with a digest-pinned K3s image,
+namespace-scoped read access, explicit sensitive/write/lateral denials, a subject- and
+audience-bound projected service-account token, and automatic teardown. Real OpenTofu apply and
+application deployment remain disabled.
 
 ### Phase 4.3 — One non-production adapter
 

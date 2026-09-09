@@ -8,11 +8,12 @@ Verified on 2026-09-08 on macOS arm64:
 |---|---|---|
 | OpenTofu | 1.12.6 | `7e12d433dc5f9d22b95fc9d0096b0b6e5e0e379486ad9724aa8e7ba08f9da7f5` |
 | k3d | 5.9.0 | `01d4cc53d962698005abc98af9adb3f07bb48b44d534ea8e73968acc986af85e` |
-| k3s default bundled by k3d | 1.35.5-k3s1 | Not started or downloaded |
+| K3s | 1.35.5-k3s1 | Image pinned to `sha256:2074403abe1bded11ef3dde09d457e13be8e0b64c218b1c4f8269b4565cfbc65` |
 
 Both tools were installed from Homebrew's stable bottles. Homebrew linkage tests passed. The
-installation added no paid service, account, credential, provider plugin, container image, or
-cluster.
+installation added no paid service, account, credential, or provider plugin. The later approved
+identity exercise pulled the pinned K3s image into the local Docker cache and used only an
+ephemeral cluster.
 
 ## Genuine no-apply plan
 
@@ -38,9 +39,12 @@ The saved-plan digest is run-specific and is evidence rather than a golden value
 test regenerates the plan in a temporary directory, validates its current digest, runs the
 no-change local adapter, confirms no state file was created, and never invokes `tofu apply`.
 
-## Remaining boundary
+## Ephemeral k3d validation
 
-k3d is installed but no cluster exists. Creating a cluster will require a separately bounded
-test because it pulls a k3s image and changes local Docker state. A real provider remains
-disabled until its exact source, version, lock checksums, resource scope, identity, and cleanup
-policy are approved.
+The separately bounded k3d identity exercise passed on 2026-09-08 and automatically destroyed
+the cluster. No named cluster, container, network, or volume remained. The pinned K3s and k3d
+tool images remain only as local Docker cache. See `docs/k3d-identity-validation.md` for the RBAC,
+projected-token, failure-cleanup, and reproduction evidence.
+
+A real provider remains disabled until its exact source, version, lock checksums, resource scope,
+identity, and cleanup policy are approved.
