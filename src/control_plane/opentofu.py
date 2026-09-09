@@ -110,8 +110,8 @@ class OpenTofuPlanValidator:
             raise AuthorizationError("OpenTofu CLI version is not pinned by policy")
         if plan.get("errored") is not False:
             raise ValidationError("errored or incomplete OpenTofu plan is not eligible")
-        variables = plan.get("variables", {})
-        if not isinstance(variables, dict) or variables:
+        variables = plan.get("variables")
+        if variables not in (None, {}):
             raise AuthorizationError("OpenTofu variable values are disabled for the local profile")
         if self._contains_sensitive_values(plan):
             raise AuthorizationError("OpenTofu JSON plan contains sensitive values")
@@ -120,13 +120,15 @@ class OpenTofuPlanValidator:
         if cost > self.policy.maximum_monthly_cost_usd:
             raise AuthorizationError("OpenTofu plan exceeds the approved cost ceiling")
 
-        drift = plan.get("resource_drift", [])
-        if not isinstance(drift, list):
+        drift = plan.get("resource_drift")
+        if drift is not None and not isinstance(drift, list):
             raise ValidationError("OpenTofu resource drift must be a list")
         if drift:
             raise AuthorizationError("OpenTofu plan contains unresolved resource drift")
 
-        configured_addresses = self._validate_configuration(plan.get("configuration"))
+        configured_addresses = self._validate_configuration(
+            plan.get("configuration"), cli_version=cli_version
+        )
         self._validate_checks(plan.get("checks", []))
         self._validate_output_changes(plan.get("output_changes", {}))
         changes = self._validate_resource_changes(plan.get("resource_changes"))
@@ -202,7 +204,7 @@ class OpenTofuPlanValidator:
             )
         return tuple(evidence)
 
-    def _validate_configuration(self, configuration: object) -> set[str]:
+    def _validate_configuration(self, configuration: object, *, cli_version: str) -> set[str]:
         if not isinstance(configuration, dict):
             raise ValidationError("OpenTofu plan lacks configuration evidence")
         provider_config = configuration.get("provider_config")
@@ -217,7 +219,11 @@ class OpenTofuPlanValidator:
             full_name = self._required_string(raw_provider, "full_name")
             if full_name not in self.policy.allowed_provider_sources:
                 raise AuthorizationError("OpenTofu provider source exceeds policy")
-            constraint = self._required_string(raw_provider, "version_constraint")
+            raw_constraint = raw_provider.get("version_constraint")
+            if raw_constraint is None and full_name == "terraform.io/builtin/terraform":
+                constraint = f"builtin:{cli_version}"
+            else:
+                constraint = self._required_string(raw_provider, "version_constraint")
             if (
                 full_name,
                 constraint,
@@ -262,6 +268,8 @@ class OpenTofuPlanValidator:
             raise AuthorizationError("OpenTofu plan contains a non-passing check")
 
     def _validate_output_changes(self, output_changes: object) -> None:
+        if output_changes is None:
+            return
         if not isinstance(output_changes, dict):
             raise ValidationError("OpenTofu output changes must be an object")
         for raw_output in output_changes.values():

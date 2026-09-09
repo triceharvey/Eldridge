@@ -17,11 +17,11 @@ LOCK_DIGEST = "b" * 64
 def _policy() -> OpenTofuPlanPolicy:
     return OpenTofuPlanPolicy(
         policy_version="opentofu/local-zero-cost-v1",
-        allowed_cli_versions=frozenset({"1.12.0"}),
+        allowed_cli_versions=frozenset({"1.12.6"}),
         allowed_provider_names=frozenset({"terraform.io/builtin/terraform"}),
         allowed_provider_sources=frozenset({"terraform.io/builtin/terraform"}),
         allowed_provider_version_constraints=frozenset(
-            {("terraform.io/builtin/terraform", "1.12.0")}
+            {("terraform.io/builtin/terraform", "builtin:1.12.6")}
         ),
         allowed_resource_types=frozenset({"terraform_data"}),
         allowed_resource_addresses=frozenset({"terraform_data.eldridge_local"}),
@@ -31,15 +31,14 @@ def _policy() -> OpenTofuPlanPolicy:
 
 def _plan() -> dict[str, object]:
     return {
-        "format_version": "1.0",
-        "terraform_version": "1.12.0",
+        "format_version": "1.2",
+        "terraform_version": "1.12.6",
         "errored": False,
         "configuration": {
             "provider_config": {
                 "terraform": {
                     "name": "terraform",
                     "full_name": "terraform.io/builtin/terraform",
-                    "version_constraint": "1.12.0",
                 }
             },
             "root_module": {
@@ -71,9 +70,10 @@ def _plan() -> dict[str, object]:
                 },
             }
         ],
-        "resource_drift": [],
-        "output_changes": {},
+        "resource_drift": None,
+        "output_changes": None,
         "checks": [],
+        "variables": None,
     }
 
 

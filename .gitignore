@@ -19,3 +19,8 @@ github-app-policy.json
 oidc-policy.json
 .env.production
 deployment/policies/
+.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.*
+crash.log

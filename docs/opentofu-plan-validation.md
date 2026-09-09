@@ -9,7 +9,8 @@ resource, contact a registry or provider, issue a credential, or apply infrastru
 The validator enforces:
 
 - a supported OpenTofu JSON format major version and an explicitly pinned CLI version;
-- allowlisted provider names, full provider sources, and exact version constraints;
+- allowlisted provider names and full provider sources, with exact external-provider version
+  constraints and the built-in provider bound to the pinned CLI version;
 - allowlisted managed-resource types and exact resource addresses;
 - a bounded change count and JSON input size;
 - only explicitly allowed actions, with delete, replacement, forget, import, generated
