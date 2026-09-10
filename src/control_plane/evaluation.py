@@ -17,6 +17,26 @@ class EvaluationStatus(StrEnum):
     EXHAUSTED = "EXHAUSTED"
 
 
+class EvaluationExecutionStatus(StrEnum):
+    PREPARED = "PREPARED"
+    RUNNING = "RUNNING"
+    OUTPUTS_READY = "OUTPUTS_READY"
+    PARTIAL = "PARTIAL"
+    UNKNOWN = "UNKNOWN"
+    FAILED = "FAILED"
+
+
+@dataclass(frozen=True)
+class PromptVariant:
+    variant_id: str
+    instruction: str
+
+    def __post_init__(self) -> None:
+        _require_identifier("prompt variant ID", self.variant_id)
+        if not self.instruction.strip() or len(self.instruction) > 4_000:
+            raise ValueError("prompt variant instruction is invalid")
+
+
 def _require_identifier(name: str, value: str) -> None:
     if IDENTIFIER.fullmatch(value) is None:
         raise ValueError(f"{name} is invalid")

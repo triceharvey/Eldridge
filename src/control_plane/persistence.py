@@ -257,6 +257,68 @@ class EvaluationCandidateRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class EvaluationExecutionRecord(Base):
+    __tablename__ = "evaluation_executions"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_evaluation_execution_actor_key"),
+        UniqueConstraint("campaign_id", "iteration", name="uq_evaluation_execution_iteration"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), nullable=False, index=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    iteration: Mapped[int] = mapped_column(Integer, nullable=False)
+    workflow_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    candidate_revision: Mapped[str | None] = mapped_column(String(128))
+    prompt_variants: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False)
+    routing_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EvaluationProviderRunRecord(Base):
+    __tablename__ = "evaluation_provider_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "execution_id",
+            "provider_id",
+            "prompt_variant_id",
+            name="uq_evaluation_provider_variant",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    execution_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_executions.id"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    provider_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider_family: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    profile_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_variant_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_contract_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    output_digest: Mapped[str | None] = mapped_column(String(71))
+    output_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    usage_json: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False, default=dict)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class CiCheckEvidence(Base):
     __tablename__ = "ci_check_evidence"
     __table_args__ = (

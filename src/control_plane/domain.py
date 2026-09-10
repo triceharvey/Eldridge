@@ -94,6 +94,7 @@ class Capability(StrEnum):
     CREATE_EVALUATION = "CREATE_EVALUATION"
     SUBMIT_EVALUATION_EVIDENCE = "SUBMIT_EVALUATION_EVIDENCE"
     READ_EVALUATION = "READ_EVALUATION"
+    EXECUTE_EVALUATION = "EXECUTE_EVALUATION"
 
 
 class ApprovalAction(StrEnum):
@@ -211,6 +212,7 @@ ROLE_CAPABILITIES: dict[AgentRole, frozenset[Capability]] = {
             Capability.CREATE_EVALUATION,
             Capability.SUBMIT_EVALUATION_EVIDENCE,
             Capability.READ_EVALUATION,
+            Capability.EXECUTE_EVALUATION,
         }
     ),
     AgentRole.AUDITOR: frozenset(

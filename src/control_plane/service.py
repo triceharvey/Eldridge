@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -60,9 +61,11 @@ from control_plane.evaluation import (
     EVALUATION_POLICY_VERSION,
     CandidateEvidence,
     EvaluationBatch,
+    EvaluationExecutionStatus,
     EvaluationPolicy,
     EvaluationStatus,
     MultiModelEvaluator,
+    PromptVariant,
     validate_evaluation_identifier,
 )
 from control_plane.executors import FakeExecutor, TaskExecutor
@@ -89,6 +92,8 @@ from control_plane.persistence import (
     EvaluationBatchRecord,
     EvaluationCampaignRecord,
     EvaluationCandidateRecord,
+    EvaluationExecutionRecord,
+    EvaluationProviderRunRecord,
     ExecutionReconciliation,
     IdempotencyRecord,
     MergeConfirmationRecord,
@@ -188,6 +193,26 @@ class PreparedExecution:
     profile: ProviderProfile
     request: ProviderRequest
     context: ExecutionContext
+
+
+@dataclass(frozen=True)
+class PreparedEvaluationRun:
+    run_id: str
+    execution_id: str
+    binding: ProviderBinding
+    profile: ProviderProfile
+    request: ProviderRequest
+
+
+@dataclass(frozen=True)
+class EvaluationRunOutcome:
+    run_id: str
+    status: str
+    output: dict[str, Any]
+    output_digest: str | None
+    usage: dict[str, int]
+    latency_ms: int
+    error_code: str | None
 
 
 class ControlPlaneService:
@@ -825,6 +850,445 @@ class ControlPlaneService:
                 .order_by(EvaluationCampaignRecord.created_at, EvaluationCampaignRecord.id)
             ).all()
             return [self._evaluation_campaign_dict(campaign) for campaign in campaigns]
+
+    def execute_evaluation_campaign(
+        self,
+        *,
+        workflow_id: str,
+        campaign_id: str,
+        task_id: str,
+        actor_id: str,
+        idempotency_key: str,
+        prompt_variants: tuple[PromptVariant, ...],
+    ) -> dict[str, Any]:
+        if not 8 <= len(idempotency_key.strip()) <= 128:
+            raise ValidationError("evaluation execution idempotency key is invalid")
+        if not prompt_variants:
+            raise ValidationError("evaluation execution requires prompt variants")
+        variant_ids = [variant.variant_id for variant in prompt_variants]
+        if len(variant_ids) != len(set(variant_ids)):
+            raise ValidationError("evaluation prompt variant IDs must be unique")
+        variant_payload = [
+            asdict(item) for item in sorted(prompt_variants, key=lambda x: x.variant_id)
+        ]
+        request_digest = self._digest(
+            {
+                "campaign_id": campaign_id,
+                "task_id": task_id,
+                "prompt_variants": variant_payload,
+            }
+        )
+        # Do not let an unauthorized caller trigger even provider health I/O.
+        with self.session_factory() as session:
+            self.policy.authorize(
+                session, actor_id, Capability.EXECUTE_EVALUATION, require_human=True
+            )
+            existing = session.scalar(
+                select(EvaluationExecutionRecord).where(
+                    EvaluationExecutionRecord.actor_id == actor_id,
+                    EvaluationExecutionRecord.idempotency_key == idempotency_key.strip(),
+                )
+            )
+            if existing is not None:
+                if existing.request_digest != request_digest:
+                    raise ConflictError("evaluation execution idempotency key was reused")
+                if existing.workflow_id != workflow_id:
+                    raise ConflictError("evaluation execution idempotency key was reused")
+                return {**self._evaluation_execution_dict(session, existing), "replayed": True}
+        # Provider health checks may perform I/O. Resolve them before opening the
+        # transaction that persists the immutable execution plan.
+        provider_health = {
+            provider_id: binding.profile.enabled and self._provider_is_healthy(binding.provider)
+            for provider_id, binding in self.provider_bindings.items()
+        }
+
+        with self.session_factory() as session, session.begin():
+            self.policy.authorize(
+                session, actor_id, Capability.EXECUTE_EVALUATION, require_human=True
+            )
+            workflow = self._get_workflow(session, workflow_id, lock=True)
+            campaign = session.get(EvaluationCampaignRecord, campaign_id, with_for_update=True)
+            task = session.get(Task, task_id)
+            if campaign is None or campaign.workflow_id != workflow_id:
+                raise NotFoundError("evaluation campaign was not found")
+            if task is None or task.workflow_id != workflow_id:
+                raise NotFoundError("evaluation task was not found")
+            if task.work_capability != campaign.work_capability:
+                raise ConflictError("evaluation task capability does not match the campaign")
+
+            existing = session.scalar(
+                select(EvaluationExecutionRecord).where(
+                    EvaluationExecutionRecord.actor_id == actor_id,
+                    EvaluationExecutionRecord.idempotency_key == idempotency_key.strip(),
+                )
+            )
+            if existing is not None:
+                if existing.request_digest != request_digest:
+                    raise ConflictError("evaluation execution idempotency key was reused")
+                return {**self._evaluation_execution_dict(session, existing), "replayed": True}
+            if campaign.status not in {"OPEN", EvaluationStatus.REFINEMENT_REQUIRED.value}:
+                raise ConflictError("evaluation campaign is terminal")
+            if len(prompt_variants) > campaign.max_prompt_variants:
+                raise ValidationError("evaluation execution exceeds the prompt-variant ceiling")
+            if campaign.max_total_cost_microunits != 0:
+                raise ConflictError(
+                    "priced evaluation execution requires a configured cost estimator"
+                )
+            existing_iteration = session.scalar(
+                select(EvaluationExecutionRecord).where(
+                    EvaluationExecutionRecord.campaign_id == campaign.id,
+                    EvaluationExecutionRecord.iteration == campaign.current_iteration,
+                )
+            )
+            if existing_iteration is not None:
+                raise ConflictError("evaluation execution already exists for campaign iteration")
+
+            profiles = tuple(
+                replace(
+                    binding.profile,
+                    healthy=provider_health[binding.profile.provider_id],
+                )
+                for binding in self.provider_bindings.values()
+            )
+            profiles = self.evidence_store.hydrate_profiles(session, profiles)
+            routing_request = RoutingRequest(
+                required_capabilities=frozenset({WorkCapability(campaign.work_capability)}),
+                data_classification=DataClassification[workflow.data_classification],
+                risk=RiskLevel[campaign.risk],
+                allowed_egress=self.allowed_egress,
+                minimum_evidence_samples=(
+                    self.high_risk_min_evidence_samples
+                    if RiskLevel[campaign.risk] >= RiskLevel.HIGH
+                    else 0
+                ),
+                objective=self.routing_objective,
+            )
+            routing = self.router.route(routing_request, profiles)
+            profiles_by_id = {profile.provider_id: profile for profile in profiles}
+            # The accepted Phase 4.2 ceiling is zero. External egress is never
+            # eligible for this execution slice, even if globally configured.
+            zero_cost_rejections = {
+                candidate.provider_id: ["zero_cost_execution_requires_local_egress"]
+                for candidate in routing.ranked_candidates
+                if profiles_by_id[candidate.provider_id].egress_boundary is not EgressBoundary.LOCAL
+            }
+            selected = tuple(
+                candidate
+                for candidate in routing.ranked_candidates
+                if profiles_by_id[candidate.provider_id].egress_boundary is EgressBoundary.LOCAL
+            )[: campaign.max_candidates]
+            if not selected:
+                raise ConflictError("no policy-eligible providers are available for evaluation")
+            routing_snapshot = {
+                "policy_version": routing.policy_version,
+                "provider_policy_version": self.provider_policy_version,
+                "objective": routing.objective.value,
+                "objective_profile_version": routing.objective_profile_version,
+                "selected": [asdict(item) for item in selected],
+                "rejected": {
+                    provider_id: list(reasons) for provider_id, reasons in routing.rejected.items()
+                }
+                | zero_cost_rejections,
+            }
+            execution = EvaluationExecutionRecord(
+                campaign_id=campaign.id,
+                workflow_id=workflow.id,
+                task_id=task.id,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key.strip(),
+                request_digest=request_digest,
+                iteration=campaign.current_iteration,
+                workflow_version=workflow.version,
+                candidate_revision=workflow.candidate_revision,
+                prompt_variants=variant_payload,
+                routing_snapshot=routing_snapshot,
+                status=EvaluationExecutionStatus.PREPARED.value,
+            )
+            session.add(execution)
+            session.flush()
+            prepared: list[PreparedEvaluationRun] = []
+            kind = TaskKind(task.kind)
+            for ranked in selected:
+                profile = profiles_by_id[ranked.provider_id]
+                binding = self.provider_bindings[ranked.provider_id]
+                for variant in prompt_variants:
+                    context = {
+                        "workflow_title": workflow.title,
+                        "workflow_description": workflow.description,
+                        "candidate_revision": workflow.candidate_revision,
+                        "workflow_version": workflow.version,
+                        "content_trust": "UNTRUSTED_REPOSITORY_CONTEXT",
+                        "data_classification": workflow.data_classification,
+                        "repository_scope": workflow.repository_scope,
+                        "evaluation_campaign_id": campaign.id,
+                        "evaluation_iteration": campaign.current_iteration,
+                        "prompt_contract_version": campaign.prompt_contract_version,
+                        "prompt_variant_id": variant.variant_id,
+                        "prompt_variant_instruction": variant.instruction,
+                    }
+                    request_payload = {
+                        "workflow_id": workflow.id,
+                        "task_id": task.id,
+                        "task_kind": kind.value,
+                        "role": TASK_ROLE[kind].value,
+                        "objective": task.objective,
+                        "context": context,
+                        "provider_id": profile.provider_id,
+                        "model_version": profile.model_version,
+                    }
+                    run = EvaluationProviderRunRecord(
+                        execution_id=execution.id,
+                        campaign_id=campaign.id,
+                        provider_id=profile.provider_id,
+                        provider_family=profile.provider_family,
+                        model_version=profile.model_version,
+                        profile_version=profile.profile_version,
+                        prompt_variant_id=variant.variant_id,
+                        prompt_contract_version=campaign.prompt_contract_version,
+                        request_digest=self._digest(request_payload),
+                        status=EvaluationExecutionStatus.PREPARED.value,
+                        output_json={},
+                        usage_json={},
+                    )
+                    session.add(run)
+                    session.flush()
+                    prepared.append(
+                        PreparedEvaluationRun(
+                            run_id=run.id,
+                            execution_id=execution.id,
+                            binding=binding,
+                            profile=profile,
+                            request=ProviderRequest(
+                                run_id=run.id,
+                                workflow_id=workflow.id,
+                                task_id=task.id,
+                                task_kind=kind,
+                                role=TASK_ROLE[kind],
+                                objective=task.objective,
+                                context=context,
+                                required_capability=TASK_CAPABILITY[kind],
+                                idempotency_key=run.id,
+                            ),
+                        )
+                    )
+            append_audit_event(
+                session,
+                workflow_id=workflow.id,
+                event_type="evaluation.execution_prepared",
+                actor_id=actor_id,
+                resource_type="evaluation_execution",
+                resource_id=execution.id,
+                outcome="SUCCEEDED",
+                payload={
+                    "campaign_id": campaign.id,
+                    "iteration": campaign.current_iteration,
+                    "provider_ids": [item.provider_id for item in selected],
+                    "prompt_variant_ids": sorted(variant_ids),
+                    "run_count": len(prepared),
+                    "routing_policy_version": routing.policy_version,
+                },
+            )
+            session.flush()
+            execution_id = execution.id
+            workflow_version = workflow.version
+            candidate_revision = workflow.candidate_revision
+
+        with self.session_factory() as session, session.begin():
+            running_execution = session.get(
+                EvaluationExecutionRecord, execution_id, with_for_update=True
+            )
+            workflow = self._get_workflow(session, workflow_id, lock=True)
+            if running_execution is None:
+                raise ConflictError("prepared evaluation execution disappeared")
+            if (
+                workflow.version != workflow_version
+                or workflow.candidate_revision != candidate_revision
+            ):
+                now = datetime.now(UTC)
+                running_execution.status = EvaluationExecutionStatus.FAILED.value
+                running_execution.error_code = "StaleWorkflowSnapshot"
+                running_execution.completed_at = now
+                stale_runs = session.scalars(
+                    select(EvaluationProviderRunRecord).where(
+                        EvaluationProviderRunRecord.execution_id == execution_id
+                    )
+                ).all()
+                for stale_run in stale_runs:
+                    stale_run.status = EvaluationExecutionStatus.FAILED.value
+                    stale_run.error_code = "StaleWorkflowSnapshot"
+                    stale_run.completed_at = now
+                append_audit_event(
+                    session,
+                    workflow_id=workflow_id,
+                    event_type="evaluation.execution_completed",
+                    actor_id="orchestrator",
+                    resource_type="evaluation_execution",
+                    resource_id=running_execution.id,
+                    outcome=EvaluationExecutionStatus.FAILED.value,
+                    payload={
+                        "campaign_id": campaign_id,
+                        "run_count": len(stale_runs),
+                        "error_code": "StaleWorkflowSnapshot",
+                    },
+                )
+                return {
+                    **self._evaluation_execution_dict(session, running_execution),
+                    "replayed": False,
+                }
+            running_execution.status = EvaluationExecutionStatus.RUNNING.value
+            now = datetime.now(UTC)
+            runs = session.scalars(
+                select(EvaluationProviderRunRecord).where(
+                    EvaluationProviderRunRecord.execution_id == execution_id
+                )
+            ).all()
+            for run in runs:
+                run.status = EvaluationExecutionStatus.RUNNING.value
+                run.started_at = now
+
+        outcomes: list[EvaluationRunOutcome] = []
+        with ThreadPoolExecutor(max_workers=min(len(prepared), 8)) as pool:
+            futures = {
+                pool.submit(self._execute_evaluation_provider_run, item): item.run_id
+                for item in prepared
+            }
+            for future in as_completed(futures):
+                try:
+                    outcomes.append(future.result())
+                except Exception:
+                    outcomes.append(
+                        EvaluationRunOutcome(
+                            run_id=futures[future],
+                            status=EvaluationExecutionStatus.UNKNOWN.value,
+                            output={},
+                            output_digest=None,
+                            usage={},
+                            latency_ms=0,
+                            error_code="InternalExecutionError",
+                        )
+                    )
+
+        with self.session_factory() as session, session.begin():
+            final_execution = session.get(
+                EvaluationExecutionRecord, execution_id, with_for_update=True
+            )
+            if (
+                final_execution is None
+                or final_execution.status != EvaluationExecutionStatus.RUNNING.value
+            ):
+                raise ConflictError("evaluation execution state changed during provider calls")
+            for outcome in outcomes:
+                run_record = session.get(
+                    EvaluationProviderRunRecord, outcome.run_id, with_for_update=True
+                )
+                if run_record is None or run_record.execution_id != final_execution.id:
+                    raise ConflictError("evaluation provider run disappeared")
+                run_record.status = outcome.status
+                run_record.output_json = outcome.output
+                run_record.output_digest = outcome.output_digest
+                run_record.usage_json = outcome.usage
+                run_record.latency_ms = outcome.latency_ms
+                run_record.error_code = outcome.error_code
+                run_record.completed_at = datetime.now(UTC)
+            statuses = {outcome.status for outcome in outcomes}
+            success_count = sum(outcome.status == "SUCCEEDED" for outcome in outcomes)
+            if EvaluationExecutionStatus.UNKNOWN.value in statuses:
+                final_status = EvaluationExecutionStatus.UNKNOWN
+            elif success_count == len(outcomes):
+                final_status = EvaluationExecutionStatus.OUTPUTS_READY
+            elif success_count:
+                final_status = EvaluationExecutionStatus.PARTIAL
+            else:
+                final_status = EvaluationExecutionStatus.FAILED
+            final_execution.status = final_status.value
+            final_execution.completed_at = datetime.now(UTC)
+            append_audit_event(
+                session,
+                workflow_id=workflow_id,
+                event_type="evaluation.execution_completed",
+                actor_id="orchestrator",
+                resource_type="evaluation_execution",
+                resource_id=final_execution.id,
+                outcome=final_status.value,
+                payload={
+                    "campaign_id": campaign_id,
+                    "run_count": len(outcomes),
+                    "succeeded": success_count,
+                    "failed": len(outcomes) - success_count,
+                    "requires_reconciliation": final_status is EvaluationExecutionStatus.UNKNOWN,
+                },
+            )
+            session.flush()
+            return {
+                **self._evaluation_execution_dict(session, final_execution),
+                "replayed": False,
+            }
+
+    def get_evaluation_execution(
+        self, workflow_id: str, execution_id: str, *, principal_id: str
+    ) -> dict[str, Any]:
+        with self.session_factory() as session:
+            self.policy.authorize(session, principal_id, Capability.READ_EVALUATION)
+            self._get_workflow(session, workflow_id)
+            execution = session.get(EvaluationExecutionRecord, execution_id)
+            if execution is None or execution.workflow_id != workflow_id:
+                raise NotFoundError("evaluation execution was not found")
+            return self._evaluation_execution_dict(session, execution)
+
+    @staticmethod
+    def _execute_evaluation_provider_run(
+        prepared: PreparedEvaluationRun,
+    ) -> EvaluationRunOutcome:
+        started = monotonic()
+        try:
+            result = prepared.binding.provider.submit(prepared.request)
+        except Exception as exc:
+            return EvaluationRunOutcome(
+                run_id=prepared.run_id,
+                status=EvaluationExecutionStatus.UNKNOWN.value,
+                output={},
+                output_digest=None,
+                usage={},
+                latency_ms=max(int((monotonic() - started) * 1000), 0),
+                error_code=type(exc).__name__[:64],
+            )
+        try:
+            if result.status != "SUCCEEDED":
+                raise ValidationError("evaluation provider did not report success")
+            if result.provider != prepared.binding.provider.name:
+                raise ValidationError("evaluation provider identity mismatch")
+            if result.model != prepared.profile.model_version:
+                raise ValidationError("evaluation provider model mismatch")
+            validate_provider_result(prepared.request.task_kind, result)
+            if any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in result.usage.values()
+            ):
+                raise ValidationError("evaluation provider usage is invalid")
+            canonical_output = json.dumps(
+                result.output, sort_keys=True, separators=(",", ":")
+            ).encode()
+            if len(canonical_output) > 1_048_576:
+                raise ValidationError("evaluation provider output exceeds one MiB")
+        except (TypeError, ValueError, ValidationError):
+            return EvaluationRunOutcome(
+                run_id=prepared.run_id,
+                status=EvaluationExecutionStatus.FAILED.value,
+                output={},
+                output_digest=None,
+                usage={},
+                latency_ms=max(int((monotonic() - started) * 1000), 0),
+                error_code="InvalidProviderResult",
+            )
+        return EvaluationRunOutcome(
+            run_id=prepared.run_id,
+            status="SUCCEEDED",
+            output=result.output,
+            output_digest="sha256:" + sha256(canonical_output).hexdigest(),
+            usage=result.usage,
+            latency_ms=max(int((monotonic() - started) * 1000), 0),
+            error_code=None,
+        )
 
     def list_ci_check_evidence(
         self, workflow_id: str, *, principal_id: str
@@ -4309,6 +4773,55 @@ class ControlPlaneService:
             "rejection_reasons": record.rejection_reasons,
             "rank": record.rank,
             "created_at": record.created_at.isoformat(),
+        }
+
+    def _evaluation_execution_dict(
+        self, session: Session, record: EvaluationExecutionRecord
+    ) -> dict[str, Any]:
+        runs = session.scalars(
+            select(EvaluationProviderRunRecord)
+            .where(EvaluationProviderRunRecord.execution_id == record.id)
+            .order_by(
+                EvaluationProviderRunRecord.provider_id,
+                EvaluationProviderRunRecord.prompt_variant_id,
+            )
+        ).all()
+        return {
+            "id": record.id,
+            "campaign_id": record.campaign_id,
+            "workflow_id": record.workflow_id,
+            "task_id": record.task_id,
+            "iteration": record.iteration,
+            "workflow_version": record.workflow_version,
+            "candidate_revision": record.candidate_revision,
+            "prompt_variants": record.prompt_variants,
+            "routing_snapshot": record.routing_snapshot,
+            "status": record.status,
+            "error_code": record.error_code,
+            "runs": [self._evaluation_provider_run_dict(run) for run in runs],
+            "created_at": record.created_at.isoformat(),
+            "completed_at": record.completed_at.isoformat() if record.completed_at else None,
+        }
+
+    @staticmethod
+    def _evaluation_provider_run_dict(record: EvaluationProviderRunRecord) -> dict[str, Any]:
+        return {
+            "id": record.id,
+            "provider_id": record.provider_id,
+            "provider_family": record.provider_family,
+            "model_version": record.model_version,
+            "profile_version": record.profile_version,
+            "prompt_variant_id": record.prompt_variant_id,
+            "prompt_contract_version": record.prompt_contract_version,
+            "request_digest": record.request_digest,
+            "status": record.status,
+            "output_digest": record.output_digest,
+            "output": record.output_json,
+            "usage": record.usage_json,
+            "latency_ms": record.latency_ms,
+            "error_code": record.error_code,
+            "started_at": record.started_at.isoformat() if record.started_at else None,
+            "completed_at": record.completed_at.isoformat() if record.completed_at else None,
         }
 
     @staticmethod
