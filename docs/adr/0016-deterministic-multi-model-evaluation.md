@@ -24,7 +24,9 @@ Only candidates that succeeded and passed every required deterministic check may
 existing policy-derived routing score is the first ranking input, followed by lower cost and latency
 and stable identity tie-breakers. Provider self-scores and prose judgments are not accepted. Medium
 risk may configure independent review; high and critical risk require at least two passed reviews from
-distinct provider IDs outside the producing provider family. A batch that exceeds any ceiling fails
+distinct provider IDs outside the producing provider family, with exact reviewer model and profile
+identity retained. Every check and review explicitly names the candidate output digest it assessed,
+preventing stale evidence from being attached to a different output. A batch that exceeds any ceiling fails
 closed. If no candidate passes, the evaluator requests the next bounded iteration or records
 exhaustion when the iteration or cost boundary prevents further work.
 

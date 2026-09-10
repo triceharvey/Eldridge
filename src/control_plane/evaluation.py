@@ -22,6 +22,11 @@ def _require_identifier(name: str, value: str) -> None:
         raise ValueError(f"{name} is invalid")
 
 
+def validate_evaluation_identifier(name: str, value: str) -> None:
+    """Validate a public evaluation contract identifier at an API or service boundary."""
+    _require_identifier(name, value)
+
+
 def _require_digest(name: str, value: str) -> None:
     if DIGEST.fullmatch(value) is None:
         raise ValueError(f"{name} must be a full sha256 digest")
@@ -42,23 +47,31 @@ class DeterministicCheck:
     name: str
     passed: bool
     evidence_digest: str
+    validated_output_digest: str
 
     def __post_init__(self) -> None:
         _require_identifier("check name", self.name)
         _require_bool("check passed", self.passed)
         _require_digest("check evidence", self.evidence_digest)
+        _require_digest("validated output", self.validated_output_digest)
 
 
 @dataclass(frozen=True)
 class IndependentReview:
     reviewer_provider_id: str
     reviewer_provider_family: str
+    reviewer_model_version: str
+    reviewer_profile_version: str
+    reviewed_output_digest: str
     passed: bool
     evidence_digest: str
 
     def __post_init__(self) -> None:
         _require_identifier("reviewer provider ID", self.reviewer_provider_id)
         _require_identifier("reviewer provider family", self.reviewer_provider_family)
+        _require_identifier("reviewer model version", self.reviewer_model_version)
+        _require_identifier("reviewer profile version", self.reviewer_profile_version)
+        _require_digest("reviewed output", self.reviewed_output_digest)
         _require_bool("review passed", self.passed)
         _require_digest("review evidence", self.evidence_digest)
 
@@ -113,9 +126,13 @@ class CandidateEvidence:
         check_names = [check.name for check in self.checks]
         if len(check_names) != len(set(check_names)):
             raise ValueError("candidate check names must be unique")
+        if any(check.validated_output_digest != self.output_digest for check in self.checks):
+            raise ValueError("candidate checks must bind the candidate output digest")
         reviewer_ids = [review.reviewer_provider_id for review in self.reviews]
         if len(reviewer_ids) != len(set(reviewer_ids)):
             raise ValueError("reviewer provider IDs must be unique per candidate")
+        if any(review.reviewed_output_digest != self.output_digest for review in self.reviews):
+            raise ValueError("candidate reviews must bind the candidate output digest")
 
     @property
     def provider_model_key(self) -> tuple[str, str]:

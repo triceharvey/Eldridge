@@ -102,3 +102,69 @@ def test_api_exposes_auditable_routing_and_evidence(service: ControlPlaneService
     assert evidence.status_code == 200
     producer = next(item for item in evidence.json() if item["provider_id"] == "mock-producer")
     assert producer["evidence"]["PLANNING"]["sample_count"] == 1
+
+
+def test_api_creates_and_reads_durable_evaluation_campaign(service: ControlPlaneService) -> None:
+    digest_a = "sha256:" + "a" * 64
+    digest_b = "sha256:" + "b" * 64
+    with TestClient(create_app(service)) as client:
+        workflow = client.post(
+            "/workflows",
+            json={
+                "title": "Evaluation API",
+                "description": "Persist a policy-bound candidate decision.",
+                "idempotency_key": "evaluation-api-workflow",
+                "risk": "LOW",
+            },
+        ).json()
+        campaign_response = client.post(
+            f"/workflows/{workflow['id']}/evaluation-campaigns",
+            json={
+                "idempotency_key": "evaluation-api-campaign",
+                "prompt_contract_version": "prompt-v1",
+                "work_capability": "PLANNING",
+                "required_checks": ["schema"],
+            },
+        )
+        campaign = campaign_response.json()
+        batch_response = client.post(
+            f"/workflows/{workflow['id']}/evaluation-campaigns/{campaign['id']}/batches",
+            json={
+                "idempotency_key": "evaluation-api-batch",
+                "candidates": [
+                    {
+                        "candidate_id": "candidate-api",
+                        "provider_id": "mock-producer",
+                        "provider_family": "deterministic-mock",
+                        "model_version": "deterministic-mock-v1",
+                        "profile_version": "v1",
+                        "prompt_variant_id": "baseline",
+                        "prompt_contract_version": "prompt-v1",
+                        "iteration": 1,
+                        "succeeded": True,
+                        "output_digest": digest_a,
+                        "latency_ms": 10,
+                        "cost_microunits": 0,
+                        "checks": [
+                            {
+                                "name": "schema",
+                                "passed": True,
+                                "evidence_digest": digest_b,
+                                "validated_output_digest": digest_a,
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        stored = client.get(f"/workflows/{workflow['id']}/evaluation-campaigns/{campaign['id']}")
+        candidate_schema = client.get("/openapi.json").json()["components"]["schemas"][
+            "EvaluationCandidateCreate"
+        ]
+
+    assert campaign_response.status_code == 201
+    assert batch_response.status_code == 201
+    assert batch_response.json()["winner_candidate_id"] == "candidate-api"
+    assert stored.status_code == 200
+    assert stored.json()["batches"][0]["candidates"][0]["candidate_id"] == "candidate-api"
+    assert "routing_score" not in candidate_schema["properties"]

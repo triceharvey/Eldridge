@@ -18,5 +18,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0014: Operator-owned routing objectives](0014-operator-owned-routing-objectives.md)
 - [ADR-0015: Loopback-only local model provider](0015-loopback-local-model-provider.md)
 - [ADR-0016: Deterministic multi-model evaluation and refinement](0016-deterministic-multi-model-evaluation.md)
+- [ADR-0017: Durable, policy-bound evaluation campaigns](0017-durable-evaluation-campaigns.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.

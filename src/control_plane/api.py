@@ -8,7 +8,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, StrictInt
 from sqlalchemy import text
 
 from control_plane.deployment import EnvironmentClassification
@@ -25,10 +25,11 @@ from control_plane.domain import (
     ReconciliationDecision,
     ValidationError,
 )
+from control_plane.evaluation import CandidateEvidence, DeterministicCheck, IndependentReview
 from control_plane.github import normalize_check_run, verify_github_signature
 from control_plane.identity import OidcAuthenticator
 from control_plane.observability import render_dashboard, render_prometheus
-from control_plane.routing import DataClassification, RiskLevel
+from control_plane.routing import DataClassification, RiskLevel, WorkCapability
 from control_plane.runtime import build_runtime
 from control_plane.service import ControlPlaneService
 from control_plane.task_strategy import ComplexityTier, InspectionSignal
@@ -137,6 +138,101 @@ class DeploymentRollbackCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+EVALUATION_IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,127}$"
+EVALUATION_DIGEST_PATTERN = r"^sha256:[0-9a-f]{64}$"
+
+
+class DeterministicCheckCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    passed: StrictBool
+    evidence_digest: str = Field(pattern=EVALUATION_DIGEST_PATTERN)
+    validated_output_digest: str = Field(pattern=EVALUATION_DIGEST_PATTERN)
+
+
+class IndependentReviewCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reviewer_provider_id: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    reviewer_provider_family: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    reviewer_model_version: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    reviewer_profile_version: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    reviewed_output_digest: str = Field(pattern=EVALUATION_DIGEST_PATTERN)
+    passed: StrictBool
+    evidence_digest: str = Field(pattern=EVALUATION_DIGEST_PATTERN)
+
+
+class EvaluationCandidateCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    provider_id: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    provider_family: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    model_version: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    profile_version: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    prompt_variant_id: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    prompt_contract_version: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    iteration: StrictInt = Field(ge=1, le=5)
+    succeeded: StrictBool
+    output_digest: str | None = Field(default=None, pattern=EVALUATION_DIGEST_PATTERN)
+    latency_ms: StrictInt = Field(ge=0)
+    cost_microunits: StrictInt = Field(ge=0)
+    checks: tuple[DeterministicCheckCreate, ...] = Field(min_length=1, max_length=100)
+    reviews: tuple[IndependentReviewCreate, ...] = Field(default=(), max_length=8)
+
+    def to_evidence(self) -> CandidateEvidence:
+        return CandidateEvidence(
+            candidate_id=self.candidate_id,
+            provider_id=self.provider_id,
+            provider_family=self.provider_family,
+            model_version=self.model_version,
+            profile_version=self.profile_version,
+            prompt_variant_id=self.prompt_variant_id,
+            prompt_contract_version=self.prompt_contract_version,
+            iteration=self.iteration,
+            succeeded=self.succeeded,
+            output_digest=self.output_digest,
+            latency_ms=self.latency_ms,
+            cost_microunits=self.cost_microunits,
+            routing_score=0.0,
+            checks=tuple(DeterministicCheck(**check.model_dump()) for check in self.checks),
+            reviews=tuple(IndependentReview(**review.model_dump()) for review in self.reviews),
+        )
+
+
+class EvaluationCampaignCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    prompt_contract_version: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    work_capability: Literal[
+        "PLANNING",
+        "ARCHITECTURE",
+        "CODE_GENERATION",
+        "TEST_DESIGN",
+        "TEST_EXECUTION",
+        "CODE_REVIEW",
+        "SECURITY_ANALYSIS",
+        "TOOL_PROPOSALS",
+        "LONG_RUNNING_EXECUTION",
+        "INTERACTIVE_IDE",
+    ]
+    required_checks: frozenset[str] = Field(min_length=1, max_length=100)
+    max_candidates: StrictInt = Field(default=4, ge=1, le=8)
+    max_prompt_variants: StrictInt = Field(default=3, ge=1, le=8)
+    max_iterations: StrictInt = Field(default=3, ge=1, le=5)
+    max_total_cost_microunits: StrictInt = Field(default=0, ge=0)
+    minimum_independent_reviews: StrictInt | None = Field(default=None, ge=0, le=2)
+
+
+class EvaluationBatchCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    candidates: tuple[EvaluationCandidateCreate, ...] = Field(min_length=1, max_length=64)
 
 
 def create_app(
@@ -444,6 +540,66 @@ def create_app(
         service: Annotated[ControlPlaneService, Depends(service_dependency)],
     ) -> list[dict[str, Any]]:
         return service.list_provider_evidence(principal_id=principal_id)
+
+    @app.post(
+        "/workflows/{workflow_id}/evaluation-campaigns",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_evaluation_campaign(
+        workflow_id: str,
+        request: EvaluationCampaignCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.create_evaluation_campaign(
+            workflow_id=workflow_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+            prompt_contract_version=request.prompt_contract_version,
+            work_capability=WorkCapability(request.work_capability),
+            required_checks=request.required_checks,
+            max_candidates=request.max_candidates,
+            max_prompt_variants=request.max_prompt_variants,
+            max_iterations=request.max_iterations,
+            max_total_cost_microunits=request.max_total_cost_microunits,
+            minimum_independent_reviews=request.minimum_independent_reviews,
+        )
+
+    @app.get("/workflows/{workflow_id}/evaluation-campaigns")
+    def list_evaluation_campaigns(
+        workflow_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> list[dict[str, Any]]:
+        return service.list_evaluation_campaigns(workflow_id, principal_id=principal_id)
+
+    @app.get("/workflows/{workflow_id}/evaluation-campaigns/{campaign_id}")
+    def get_evaluation_campaign(
+        workflow_id: str,
+        campaign_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.get_evaluation_campaign(workflow_id, campaign_id, principal_id=principal_id)
+
+    @app.post(
+        "/workflows/{workflow_id}/evaluation-campaigns/{campaign_id}/batches",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def submit_evaluation_evidence(
+        workflow_id: str,
+        campaign_id: str,
+        request: EvaluationBatchCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.submit_evaluation_evidence(
+            workflow_id=workflow_id,
+            campaign_id=campaign_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+            candidates=tuple(candidate.to_evidence() for candidate in request.candidates),
+        )
 
     @app.get("/ci-checks")
     def list_ci_checks(

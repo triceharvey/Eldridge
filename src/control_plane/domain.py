@@ -91,6 +91,9 @@ class Capability(StrEnum):
     APPROVE_ROLLBACK = "APPROVE_ROLLBACK"
     EXECUTE_ROLLBACK = "EXECUTE_ROLLBACK"
     READ_DEPLOYMENT = "READ_DEPLOYMENT"
+    CREATE_EVALUATION = "CREATE_EVALUATION"
+    SUBMIT_EVALUATION_EVIDENCE = "SUBMIT_EVALUATION_EVIDENCE"
+    READ_EVALUATION = "READ_EVALUATION"
 
 
 class ApprovalAction(StrEnum):
@@ -205,10 +208,18 @@ ROLE_CAPABILITIES: dict[AgentRole, frozenset[Capability]] = {
             Capability.APPROVE_ROLLBACK,
             Capability.EXECUTE_ROLLBACK,
             Capability.READ_DEPLOYMENT,
+            Capability.CREATE_EVALUATION,
+            Capability.SUBMIT_EVALUATION_EVIDENCE,
+            Capability.READ_EVALUATION,
         }
     ),
     AgentRole.AUDITOR: frozenset(
-        {Capability.READ_WORKFLOW, Capability.READ_AUDIT, Capability.READ_DEPLOYMENT}
+        {
+            Capability.READ_WORKFLOW,
+            Capability.READ_AUDIT,
+            Capability.READ_DEPLOYMENT,
+            Capability.READ_EVALUATION,
+        }
     ),
     AgentRole.IDE_INTEGRATION: frozenset(
         {
