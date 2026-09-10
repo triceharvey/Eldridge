@@ -224,6 +224,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 4.3 acceptance record](docs/phase-4-3-acceptance.md)
 - [Phase 4.4 acceptance record](docs/phase-4-4-acceptance.md)
 - [Phase 5.1 local model provider acceptance](docs/phase-5-1-acceptance.md)
+- [Phase 5.2 multi-model evaluation core acceptance](docs/phase-5-2-acceptance.md)
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)
