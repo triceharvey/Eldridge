@@ -3,9 +3,9 @@
 [![CI](https://github.com/triceharvey/Eldridge/actions/workflows/ci.yml/badge.svg)](https://github.com/triceharvey/Eldridge/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB.svg)](https://www.python.org/)
 
-**Status:** Phase 4 controlled-deployment implementation and private validation. The control plane is not yet a
-hosted service, and all commercial providers and privileged integrations remain disabled by
-default.
+**Status:** Public portfolio release with Phase 4 controlled-deployment validation complete on
+the USD 0 local target. The control plane is not yet a hosted service, and all commercial
+providers and privileged integrations remain disabled by default.
 
 This repository defines a production-minded control plane for coordinating specialized AI engineering agents under explicit policy, isolation, audit, and human approval. The system is not a group chat for models. It is a workflow engine in which agents are treated as untrusted, non-human service identities and deterministic controls outrank model recommendations.
 

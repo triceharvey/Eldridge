@@ -59,9 +59,11 @@ request #2 using pull-request write authority without contents-write or merge au
 That pull request advanced to ready-for-review only after the owner approved the Phase 4 design
 and the Phase 4.1 implementation passed local and hosted CI.
 
-Webhook delivery, protected-branch evidence, human review, and merge reconciliation remain
-separate gates. Webhooks will not be enabled against a localhost development server. GitHub's
-branch-protection endpoint currently returns HTTP 403 for this private personal repository and
-states that a qualifying paid plan or public visibility is required. The readiness client now
-turns an unreadable protection response into `branch_protection_unverifiable` and remains
-fail-closed. No plan upgrade, visibility change, bypass, or merge was attempted.
+Webhook delivery, human review, and merge reconciliation remain separate gates. Webhooks will
+not be enabled against a localhost development server. While the repository was private,
+GitHub's branch-protection endpoint returned HTTP 403 and the readiness client correctly treated
+that as `branch_protection_unverifiable`. After the public-readiness review passed, the owner
+authorized public visibility on 2026-09-09. The `main` rule now applies to administrators,
+requires pull requests, strict `gitleaks`, `package`, and `test` checks, linear history, and
+conversation resolution, and prohibits force-pushes and branch deletion. No merge was performed
+as part of activation.

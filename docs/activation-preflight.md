@@ -19,12 +19,16 @@ This checklist is the boundary between the locally verified implementation and e
 - [x] Document the license, contribution, provider, dependency, and AI-output boundaries.
 - [x] Enforce full-commit-SHA pinning for GitHub Actions, retain read-only default workflow
   permissions, prohibit workflow approval of pull requests, and delete merged branches.
+- [x] Publish the sanitized Apache-2.0 repository on 2026-09-09 after the private validation and
+  public-readiness review passed.
 
 ## GitHub security activation
 
 - [x] Install and live-probe the least-authority GitHub App for only the selected repository.
 - [ ] Configure the webhook secret and deliver a signed test event.
-- [ ] Protect `main` from direct pushes and require exact-revision checks.
+- [x] Protect `main`, enforce the rule for administrators, require pull requests, strict
+  `gitleaks`, `package`, and `test` checks, linear history, and conversation resolution, and deny
+  force-pushes and deletion.
 - [ ] Configure the real OIDC issuer, audience, subject mapping, and operator roles.
 - [ ] Exercise one human-approved draft pull request from creation through merge reconciliation.
 
