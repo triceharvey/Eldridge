@@ -97,6 +97,7 @@ from control_plane.routing import (
     EgressBoundary,
     ProviderProfile,
     RiskLevel,
+    RoutingObjective,
     RoutingPurpose,
     RoutingRequest,
     WorkCapability,
@@ -195,6 +196,7 @@ class ControlPlaneService:
         heartbeat_interval_seconds: float | None = None,
         repository_registry: RepositoryRegistry | None = None,
         provider_policy_version: str = "built-in/mock-v1",
+        routing_objective: RoutingObjective = RoutingObjective.BALANCED,
         github_app: GitHubAppClient | None = None,
         deployment_adapters: tuple[DeploymentAdapter | CredentialedDeploymentAdapter, ...]
         | None = None,
@@ -238,6 +240,7 @@ class ControlPlaneService:
         self.policy = policy or PolicyEngine()
         self.repository_registry = repository_registry
         self.provider_policy_version = provider_policy_version
+        self.routing_objective = routing_objective
         self.github_app = github_app
         configured_adapters = deployment_adapters or (DryRunDeploymentAdapter(),)
         if any(adapter.requires_credentials for adapter in configured_adapters) and not (
@@ -2763,6 +2766,7 @@ class ControlPlaneService:
             ),
             producer_provider_id=producer_id,
             producer_family=producer_family,
+            objective=self.routing_objective,
         )
         decision = self.router.route(routing_request, profiles)
         selected_profile = next(
@@ -2791,9 +2795,17 @@ class ControlPlaneService:
                     "minimum_evidence_samples": routing_request.minimum_evidence_samples,
                     "producer_provider_id": producer_id,
                     "producer_family": producer_family,
+                    "objective": decision.objective.value,
+                    "objective_profile_version": decision.objective_profile_version,
                 },
                 ranked_candidates=[
-                    {"provider_id": item.provider_id, "score": item.score}
+                    {
+                        "provider_id": item.provider_id,
+                        "score": item.score,
+                        "quality_utility": item.quality_utility,
+                        "cost_utility": item.cost_utility,
+                        "latency_utility": item.latency_utility,
+                    }
                     for item in decision.ranked_candidates
                 ],
                 rejected_candidates={

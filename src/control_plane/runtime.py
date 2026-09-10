@@ -18,7 +18,7 @@ from control_plane.persistence import (
     make_session_factory,
     seed_principals,
 )
-from control_plane.routing import EgressBoundary
+from control_plane.routing import EgressBoundary, RoutingObjective
 from control_plane.service import ControlPlaneService
 from control_plane.workspaces import GitWorktreeManager, RepositoryRegistry
 
@@ -104,6 +104,7 @@ def build_runtime(
             activated.allowed_egress if activated else frozenset({EgressBoundary.LOCAL})
         ),
         provider_policy_version=activated.policy_version if activated else "built-in/mock-v1",
+        routing_objective=RoutingObjective(selected.routing_objective),
         github_app=github_app,
     )
     return Runtime(

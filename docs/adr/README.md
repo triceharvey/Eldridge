@@ -15,5 +15,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0011: Local Kubernetes TokenRequest broker](0011-local-kubernetes-token-request-broker.md)
 - [ADR-0012: Bounded local k3d deployment adapter](0012-bounded-local-k3d-deployment-adapter.md)
 - [ADR-0013: Controlled local recovery](0013-controlled-local-recovery.md)
+- [ADR-0014: Operator-owned routing objectives](0014-operator-owned-routing-objectives.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.

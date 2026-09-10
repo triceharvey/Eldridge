@@ -90,6 +90,15 @@ def test_failed_provider_evidence_changes_retry_route(session_factory) -> None:
         ]
         assert [item.succeeded for item in observations] == [False, True]
         assert routes[1].ranked_candidates[0]["provider_id"] == "b-working"
+        assert routes[1].request_json["objective"] == "BALANCED"
+        assert routes[1].request_json["objective_profile_version"] == "routing-objectives/v1"
+        assert set(routes[1].ranked_candidates[0]) == {
+            "provider_id",
+            "score",
+            "quality_utility",
+            "cost_utility",
+            "latency_utility",
+        }
         assert all(route.workflow_id == workflow["id"] for route in routes)
 
 

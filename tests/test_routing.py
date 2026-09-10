@@ -7,6 +7,7 @@ from control_plane.routing import (
     ExecutionMode,
     ProviderProfile,
     RiskLevel,
+    RoutingObjective,
     RoutingPurpose,
     RoutingRequest,
     WorkCapability,
@@ -153,6 +154,60 @@ def test_small_samples_are_shrunk_toward_neutral_quality() -> None:
     )
 
     assert decision.selected_provider_id == "established"
+
+
+def test_operator_objective_changes_ranking_without_changing_eligibility() -> None:
+    fast_expensive = profile(
+        "fast-expensive",
+        cost=CostTier.HIGH,
+        evidence=CapabilityEvidence(30, 0.9, 0.9, 2),
+    )
+    slow_frugal = profile(
+        "slow-frugal",
+        cost=CostTier.LOW,
+        evidence=CapabilityEvidence(30, 0.82, 0.82, 120),
+    )
+
+    speed = CapabilityRouter().route(
+        request(objective=RoutingObjective.SPEED), (slow_frugal, fast_expensive)
+    )
+    frugal = CapabilityRouter().route(
+        request(objective=RoutingObjective.FRUGAL), (slow_frugal, fast_expensive)
+    )
+
+    assert speed.selected_provider_id == "fast-expensive"
+    assert frugal.selected_provider_id == "slow-frugal"
+    assert speed.objective_profile_version == "routing-objectives/v1"
+    assert speed.ranked_candidates[0].latency_utility > speed.ranked_candidates[1].latency_utility
+
+
+def test_objective_cannot_rescue_a_policy_ineligible_provider() -> None:
+    external = profile(
+        "external",
+        boundary=EgressBoundary.APPROVED_EXTERNAL,
+        maximum_data=DataClassification.INTERNAL,
+        cost=CostTier.LOW,
+        evidence=CapabilityEvidence(100, 1.0, 1.0, 0.1),
+    )
+
+    decision = CapabilityRouter().route(request(objective=RoutingObjective.QUALITY), (external,))
+
+    assert decision.blocked
+    assert decision.ranked_candidates == ()
+    assert decision.rejected["external"] == ("egress_boundary_not_approved",)
+
+
+def test_ranked_candidates_expose_interpretable_score_components() -> None:
+    decision = CapabilityRouter().route(
+        request(objective=RoutingObjective.BALANCED),
+        (profile("candidate", cost=CostTier.LOW, evidence=CapabilityEvidence(20, 0.8, 0.6, 30)),),
+    )
+
+    candidate = decision.ranked_candidates[0]
+    assert candidate.quality_utility == 0.7
+    assert candidate.cost_utility == 1.0
+    assert candidate.latency_utility == 0.35
+    assert candidate.score == 0.71
 
 
 def test_evidence_floor_blocks_unproven_provider_for_sensitive_route() -> None:

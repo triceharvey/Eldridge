@@ -30,12 +30,18 @@ The loop operates under these controls:
 - routing failures produce a blocked workflow rather than an unapproved fallback; and
 - every routing decision stores candidates, scores, exclusions, policy version, and the selected identity.
 
+Eligible candidates are ranked under one operator-selected, versioned objective: `BALANCED`,
+`QUALITY`, `SPEED`, or `FRUGAL`. The objective only reweights bounded quality, cost, and latency
+utilities after every policy filter has run. Each component is retained in the routing record so
+the choice is explainable. Set `CONTROL_PLANE_ROUTING_OBJECTIVE`; the default is `BALANCED`.
+
 ## Configuration
 
 | Setting | Default | Purpose |
 |---|---:|---|
 | `CONTROL_PLANE_EVIDENCE_WINDOW_SIZE` | 100 | Limits how much recent version-specific history influences a route |
 | `CONTROL_PLANE_HIGH_RISK_MIN_EVIDENCE_SAMPLES` | 20 | Prevents unproven providers from receiving high-risk work |
+| `CONTROL_PLANE_ROUTING_OBJECTIVE` | `BALANCED` | Chooses transparent ranking weights without changing eligibility |
 
 The external egress allowlist is an explicit, versioned runtime policy input and defaults to local-only. A credential never activates Claude, Devin, Windsurf, or another external provider by itself; activation also requires an enabled binding, scoped credential reference, health, allowed data class and risk, and operator-approved egress. Routing records preserve the activation-policy version alongside the routing-policy version.
 

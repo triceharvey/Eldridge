@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     lease_heartbeat_seconds: float | None = Field(default=None, gt=0)
     evidence_window_size: int = Field(default=100, ge=10, le=10_000)
     high_risk_min_evidence_samples: int = Field(default=20, ge=1, le=10_000)
+    routing_objective: Literal["BALANCED", "QUALITY", "SPEED", "FRUGAL"] = "BALANCED"
     worktree_root: Path = Path(".control-plane-worktrees")
     repository_registry_file: Path | None = None
     provider_policy_file: Path | None = None
