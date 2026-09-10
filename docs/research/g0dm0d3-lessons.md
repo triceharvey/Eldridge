@@ -11,7 +11,7 @@ Reviewed 2026-09-09 from the public [G0DM0D3 repository](https://github.com/elde
 | Interpretable multi-axis model scoring | Expose quality, cost, and latency utilities for every eligible routing candidate | Implemented in `capability-routing/v2` |
 | Multi-model comparison | Use independent candidates for complex work, then compare deterministic artifacts and evidence instead of model popularity or prose voting | Retain as a budget-controlled future slice |
 | Feedback-driven adaptation | Continue append-only, version-partitioned observations with a neutral prior and human-controlled promotion | Already implemented; strengthen with delayed outcome attribution |
-| OpenAI-compatible local endpoints | Add an adapter for an operator-owned local model server when a real runtime is selected and contract-tested | Candidate zero-cost provider work |
+| OpenAI-compatible local endpoints | Add a disabled, loopback-only adapter for an operator-owned local model server | Implemented as a zero-cost provider boundary |
 | Local-only and no-log controls | Make egress, telemetry, and content retention visible and independently controllable | Existing local-only default; improve operator UX later |
 | Explicit data-flow documentation and per-request content contribution | Maintain schema-level content exclusion and require separate, informed opt-in before retaining prompt or response bodies | Adopt privacy-by-construction, not public auto-publication |
 | Self-custodied history with export/import | Offer signed, portable configuration and audit exports without requiring a hosted account | Candidate Phase 5 usability feature |

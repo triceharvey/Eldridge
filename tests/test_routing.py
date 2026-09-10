@@ -237,6 +237,7 @@ def test_interoperability_profiles_are_descriptive_and_disabled_by_default() -> 
     assert {item.provider_id for item in profiles} == {
         "anthropic-claude",
         "devin",
+        "local-openai-compatible",
         "windsurf-cascade",
     }
     assert not any(item.enabled or item.healthy for item in profiles)

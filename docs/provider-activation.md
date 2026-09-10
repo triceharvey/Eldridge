@@ -1,6 +1,9 @@
 # Provider Activation Runbook
 
-Claude and Devin are installed integration boundaries, not implicitly trusted providers. The normal runtime remains local and deterministic until an operator points `CONTROL_PLANE_PROVIDER_POLICY_FILE` at a reviewed policy. Credentials alone do not activate anything.
+Claude, Devin, and the local OpenAI-compatible adapter are installed integration boundaries, not
+implicitly trusted providers. The normal runtime remains deterministic until an operator points
+`CONTROL_PLANE_PROVIDER_POLICY_FILE` at a reviewed policy. Credentials or a running local server do
+not activate anything by themselves.
 
 ## Activation contract
 
@@ -11,6 +14,18 @@ Claude activation disables mock-provider fallback. This prevents an outage, rout
 Devin activation currently exposes only its bounded remote-session lifecycle: create, poll, and cancel with repository scope, tags, a maximum ACU limit, and optional structured-output schema. It is not placed in the normal task-provider routing pool yet. Phase 3 must first ingest Devin's commit or pull-request revision and independently validate its CI evidence; otherwise a remote result could bypass the same revision-bound controls applied to local worktrees.
 
 Every routing record stores both the capability-router version and provider-activation policy version. This makes later evidence and incident review attributable to the exact configured policy.
+
+## Zero-cost local model canary
+
+Set `local_model.enabled` to `true`, choose the exact installed model, and set
+`include_mock_providers` to `false` when measuring the local model without mock competition. External
+egress stays disabled and no secret mapping is required. The endpoint must use literal loopback, for
+example `http://127.0.0.1:11434/v1/chat/completions`; LAN and remote endpoints are rejected.
+
+Start the operator-owned runtime separately, verify `/v1/models`, then begin with deterministic
+low-risk fixtures. Review normalized output, validation, routing records, latency, resource pressure,
+and exact model-version evidence before widening its risk ceiling. Local placement does not authorize
+tools or bypass any human gate.
 
 ## Safe canary sequence
 

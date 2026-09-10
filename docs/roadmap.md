@@ -59,6 +59,12 @@ routing objectives with versioned, interpretable quality, cost, and latency comp
 remains fail-closed and is evaluated before optimization. The external G0DM0D3 design review and
 Apache/AGPL provenance boundary are recorded in `docs/research/g0dm0d3-lessons.md`.
 
+The second zero-cost slice adds a disabled-by-default OpenAI-compatible local model adapter. It is
+restricted to literal loopback, uses no credential, refuses redirects, begins unqualified for each
+exact model identifier, and remains behind the same validation, evidence, review, and approval gates.
+The adapter contract is complete; an actual runtime/model installation and live canary remain a
+separate resource and activation decision.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.

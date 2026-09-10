@@ -297,6 +297,16 @@ def interoperability_profiles() -> tuple[ProviderProfile, ...]:
     )
     return (
         ProviderProfile(
+            provider_id="local-openai-compatible",
+            provider_family="operator-local",
+            execution_mode=ExecutionMode.LOCAL_MODEL,
+            capabilities=general_model,
+            egress_boundary=EgressBoundary.LOCAL,
+            maximum_data_classification=DataClassification.RESTRICTED,
+            cost_tier=CostTier.LOW,
+            model_version="operator-configured",
+        ),
+        ProviderProfile(
             provider_id="anthropic-claude",
             provider_family="anthropic",
             execution_mode=ExecutionMode.MODEL,
