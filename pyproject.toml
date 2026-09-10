@@ -36,6 +36,7 @@ control-plane = "control_plane.cli:main"
 control-plane-api = "control_plane.api:run"
 control-plane-worker = "control_plane.worker:main"
 control-plane-mcp = "control_plane.mcp_server:main"
+control-plane-local-canary = "control_plane.local_canary:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/control_plane"]

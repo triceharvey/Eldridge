@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from ipaddress import ip_address
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -28,6 +28,8 @@ class LocalOpenAIProviderConfig(BaseModel):
     )
     max_tokens: int = Field(default=4096, ge=256, le=32_000)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
+    reasoning_effort: Literal["none", "low", "medium", "high"] | None = None
+    artifact_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def restrict_endpoint_to_loopback(self) -> LocalOpenAIProviderConfig:
@@ -52,6 +54,10 @@ class LocalOpenAIProviderConfig(BaseModel):
                 "local model endpoint must be an uncredentialed loopback HTTP "
                 "URL with an explicit non-privileged port and /v1/chat/completions path"
             )
+        if self.enabled and (
+            self.artifact_digest is None or self.artifact_digest == "sha256:" + "0" * 64
+        ):
+            raise ValueError("enabled local model requires a full sha256 artifact digest")
         return self
 
 
@@ -74,6 +80,12 @@ class LocalOpenAIProvider:
     @property
     def name(self) -> str:
         return "local-openai-compatible"
+
+    @property
+    def evidence_model_id(self) -> str:
+        if self.config.artifact_digest is None:
+            return self.config.model
+        return f"{self.config.model}@{self.config.artifact_digest}"
 
     def capabilities(self) -> frozenset[str]:
         return frozenset({"reasoning", "code_generation", "review", "structured_output"})
@@ -108,7 +120,7 @@ class LocalOpenAIProvider:
             status="SUCCEEDED",
             output=output,
             provider=self.name,
-            model=self.config.model,
+            model=self.evidence_model_id,
             usage={"input_tokens": input_tokens, "output_tokens": output_tokens},
         )
 
@@ -133,7 +145,7 @@ class LocalOpenAIProvider:
             return False
 
     def _payload(self, request: ProviderRequest) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "model": self.config.model,
             "max_tokens": self.config.max_tokens,
             "temperature": 0,
@@ -161,6 +173,9 @@ class LocalOpenAIProvider:
                 },
             ],
         }
+        if self.config.reasoning_effort is not None:
+            payload["reasoning_effort"] = self.config.reasoning_effort
+        return payload
 
     @staticmethod
     def _usage_value(usage: object, key: str) -> int:

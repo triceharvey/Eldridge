@@ -191,7 +191,9 @@ The Streamable HTTP endpoint is `http://127.0.0.1:8010/mcp`. It exposes only exp
 For a zero-cost local model canary, start an operator-owned OpenAI-compatible runtime on a literal
 loopback address, configure the disabled `local_model` block in `provider-policy.example.json`, and
 follow the [provider activation runbook](docs/provider-activation.md). No compatible runtime or model
-is bundled, downloaded, or activated by Eldridge.
+is bundled, downloaded, or activated by Eldridge. Run `control-plane-local-canary` before enabling a
+new exact model identifier; the command emits model-bound synthetic qualification evidence and fails
+if health, structured planning, injection containment, or source-context fidelity fails.
 
 Run the verification suite:
 

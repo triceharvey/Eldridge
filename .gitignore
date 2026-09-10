@@ -24,3 +24,4 @@ deployment/policies/
 *.tfstate
 *.tfstate.*
 crash.log
+.canary/

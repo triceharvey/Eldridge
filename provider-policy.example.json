@@ -18,9 +18,11 @@
   "local_model": {
     "enabled": false,
     "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
-    "model": "qwen3:8b",
+    "model": "qwen3.5:9b-q4_K_M",
+    "artifact_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
     "max_tokens": 4096,
     "timeout_seconds": 60,
+    "reasoning_effort": "none",
     "maximum_data_classification": "RESTRICTED",
     "maximum_risk": "MEDIUM"
   },

@@ -27,6 +27,38 @@ low-risk fixtures. Review normalized output, validation, routing records, latenc
 and exact model-version evidence before widening its risk ceiling. Local placement does not authorize
 tools or bypass any human gate.
 
+The repository includes a fail-closed live qualification command. The following example keeps
+Ollama transient and loopback-only; it does not install an always-on service:
+
+```sh
+OLLAMA_HOST=127.0.0.1:11434 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 \
+  OLLAMA_NO_CLOUD=1 OLLAMA_NOHISTORY=1 ollama serve
+ollama pull qwen3.5:9b-q4_K_M
+curl --fail --silent http://127.0.0.1:11434/api/tags | jq \
+  '.models[] | select(.name == "qwen3.5:9b-q4_K_M") | {name,digest}'
+control-plane-local-canary \
+  --runtime ollama \
+  --model qwen3.5:9b-q4_K_M \
+  --artifact-digest sha256:<full-manifest-digest-from-api-tags> \
+  --output .canary/qwen3.5-9b-q4_K_M.json
+```
+
+Replace the digest placeholder with `sha256:` followed by the full digest returned by the runtime.
+Do not enable a policy that still contains the all-zero example digest.
+
+The report contains only synthetic fixture inputs and outputs. It records endpoint health, latency,
+token usage, canonical output hashes, the full model-manifest digest, exact runtime/model identifiers,
+and an explicit all-or-nothing result. The fixtures test structured planning, hostile
+repository-instruction containment, and source context fidelity. A passing report supports only
+provisional low-risk evaluation; it does not grant tool, merge, deployment, publication, or
+human-approval authority. Preserve reviewed reports outside
+Git or in an approved immutable evidence store when they are used for a promotion decision.
+
+For a canon-governed project such as KAiJU Frenchies, use the same pattern with project-specific
+holdout fixtures built from the approved canon bible and provenance ledger. A local model may propose
+metadata, checks, drafts, or review findings, but canon changes, commercial asset release, storefront
+publication, and production changes remain human decisions.
+
 ## Safe canary sequence
 
 1. Review provider data retention, regional processing, account roles, model access, and current pricing outside this repository.
