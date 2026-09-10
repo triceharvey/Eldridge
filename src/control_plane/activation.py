@@ -8,7 +8,13 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from control_plane.integrations import DevinRuntime, DevinRuntimeConfig
-from control_plane.providers import AnthropicProvider, AnthropicProviderConfig, MockProvider
+from control_plane.providers import (
+    AnthropicProvider,
+    AnthropicProviderConfig,
+    LocalOpenAIProvider,
+    LocalOpenAIProviderConfig,
+    MockProvider,
+)
 from control_plane.routing import (
     DataClassification,
     EgressBoundary,
@@ -73,6 +79,41 @@ class DevinActivation(BaseModel):
         return _parse_named_enum(value, enum_type)
 
 
+class LocalModelActivation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    endpoint: str = "http://127.0.0.1:11434/v1/chat/completions"
+    model: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$",
+    )
+    max_tokens: int = Field(default=4096, ge=256, le=32_000)
+    timeout_seconds: float = Field(default=60, gt=0, le=600)
+    maximum_data_classification: DataClassification = DataClassification.RESTRICTED
+    maximum_risk: RiskLevel = RiskLevel.MEDIUM
+
+    @field_validator("maximum_data_classification", "maximum_risk", mode="before")
+    @classmethod
+    def parse_named_limits(cls, value: object, info: ValidationInfo) -> object:
+        enum_type = (
+            DataClassification if info.field_name == "maximum_data_classification" else RiskLevel
+        )
+        return _parse_named_enum(value, enum_type)
+
+    @model_validator(mode="after")
+    def validate_provider_config(self) -> LocalModelActivation:
+        LocalOpenAIProviderConfig(
+            enabled=self.enabled,
+            endpoint=self.endpoint,
+            model=self.model,
+            max_tokens=self.max_tokens,
+            timeout_seconds=self.timeout_seconds,
+        )
+        return self
+
+
 class ProviderActivationPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -82,14 +123,15 @@ class ProviderActivationPolicy(BaseModel):
     secret_environment: dict[str, str] = Field(default_factory=dict)
     anthropic: AnthropicActivation | None = None
     devin: DevinActivation | None = None
+    local_model: LocalModelActivation | None = None
 
     @model_validator(mode="after")
     def enforce_activation_invariants(self) -> ProviderActivationPolicy:
-        enabled = any(
+        external_enabled = any(
             activation is not None and activation.enabled
             for activation in (self.anthropic, self.devin)
         )
-        if enabled and not self.allow_external_egress:
+        if external_enabled and not self.allow_external_egress:
             raise ValueError("external provider activation requires approved egress")
         if self.anthropic is not None and self.anthropic.enabled and self.include_mock_providers:
             raise ValueError("live-provider routing cannot silently fall back to mock providers")
@@ -142,6 +184,28 @@ def activate_integrations(
         )
 
     profiles = {profile.provider_id: profile for profile in interoperability_profiles()}
+    local_model = policy.local_model
+    if local_model is not None and local_model.enabled:
+        local_provider = LocalOpenAIProvider(
+            LocalOpenAIProviderConfig(
+                enabled=True,
+                endpoint=local_model.endpoint,
+                model=local_model.model,
+                max_tokens=local_model.max_tokens,
+                timeout_seconds=local_model.timeout_seconds,
+            )
+        )
+        profile = replace(
+            profiles["local-openai-compatible"],
+            enabled=True,
+            healthy=True,
+            model_version=local_model.model,
+            profile_version=policy.policy_version,
+            maximum_data_classification=local_model.maximum_data_classification,
+            maximum_risk=local_model.maximum_risk,
+        )
+        bindings.append(ProviderBinding(profile=profile, provider=local_provider))
+
     anthropic = policy.anthropic
     if anthropic is not None and anthropic.enabled:
         resolver.resolve(anthropic.api_key_ref)

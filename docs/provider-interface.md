@@ -97,7 +97,10 @@ The adapter never executes a proposed shell command directly. The control plane 
 2. **AnthropicProvider:** disabled-by-default Claude Messages adapter with an official-endpoint restriction, opaque secret reference, structured JSON parsing, normalized usage, and client-side tool proposals. Activation still requires an approved data-egress and cost policy.
 3. **DevinRuntime:** modeled separately as a remote session runtime with create, poll, and cancel lifecycle operations, service-user credentials, repository scope, cost-unit limits, and no approval-bypass field.
 4. **Windsurf handoff:** Git- and MCP-oriented interoperability because the documented Enterprise API does not establish a general headless Cascade-session interface.
-5. **LocalModelProvider:** later adapter for Ollama-compatible local inference. Local execution reduces some data-egress risk but does not make model output trusted.
+5. **LocalOpenAIProvider:** disabled-by-default, credential-free adapter for an operator-owned
+   OpenAI-compatible runtime. The endpoint is restricted to a literal loopback address and exact
+   chat-completions path. Local execution reduces data-egress risk but does not make model output
+   trusted.
 
 Remote agents and IDE systems are not forced into a chat-completion-shaped interface. Their workspace, cost, identity, approval, and lifecycle differences remain visible to the orchestrator.
 

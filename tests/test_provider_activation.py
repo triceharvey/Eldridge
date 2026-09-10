@@ -95,6 +95,41 @@ def test_anthropic_activation_resolves_secret_before_enabling_binding() -> None:
     assert EgressBoundary.APPROVED_EXTERNAL in activated.allowed_egress
 
 
+def test_local_model_activation_needs_no_secret_or_external_egress() -> None:
+    local_model = {
+        "enabled": True,
+        "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+        "model": "qwen-local",
+        "maximum_data_classification": "RESTRICTED",
+        "maximum_risk": "MEDIUM",
+    }
+    policy = ProviderActivationPolicy.model_validate(
+        _policy(include_mock_providers=False, local_model=local_model)
+    )
+
+    activated = activate_integrations(policy, secret_resolver=StaticSecretResolver({}))
+
+    assert activated.allowed_egress == frozenset({EgressBoundary.LOCAL})
+    assert len(activated.bindings) == 1
+    profile = activated.bindings[0].profile
+    assert profile.provider_id == "local-openai-compatible"
+    assert profile.model_version == "qwen-local"
+    assert profile.maximum_data_classification is DataClassification.RESTRICTED
+
+
+def test_local_model_activation_rejects_non_loopback_endpoint() -> None:
+    with pytest.raises(ValidationError, match="local model endpoint"):
+        ProviderActivationPolicy.model_validate(
+            _policy(
+                local_model={
+                    "enabled": True,
+                    "endpoint": "http://192.168.1.10:11434/v1/chat/completions",
+                    "model": "remote-model",
+                }
+            )
+        )
+
+
 def test_runtime_loads_disabled_policy_and_records_its_version(tmp_path: object) -> None:
     from pathlib import Path
 

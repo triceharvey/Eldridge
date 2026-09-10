@@ -13,7 +13,13 @@ The repository has completed **Phase 0** and the **Phase 1 deterministic control
 
 The worker composes an operator-registered repository, per-task Git worktree, typed model tool proposals, and the hardened Docker executor. Successful task-branch commits are bound to the real Git revision. Provider and executor calls occur outside database transactions under renewable leases; expired running work blocks for explicit human reconciliation, and late results are rejected. External provider activation remains an explicit human decision.
 
-Strength-aware routing is now in the worker path. It persists every decision, learns from bounded version-specific validation evidence, discounts weak samples, enforces provider-family diversity for high-risk review, and contains obfuscated or suspicious inputs before egress or tool use. Claude and Devin adapters remain disabled by default. Windsurf can use a separately activated, localhost-only MCP handoff boundary.
+Strength-aware routing is now in the worker path. It persists every decision, learns from bounded
+version-specific validation evidence, discounts weak samples, supports operator-selected quality,
+speed, frugality, or balanced objectives, enforces provider-family diversity for high-risk review,
+and contains obfuscated or suspicious inputs before egress or tool use. Claude and Devin adapters
+remain disabled by default. A credential-free OpenAI-compatible adapter is available only on literal
+loopback under explicit policy, and Windsurf can use a separately activated localhost-only MCP
+handoff boundary.
 
 ## Executive architecture summary
 
@@ -182,6 +188,11 @@ To activate the local Windsurf MCP boundary, first configure the repository regi
 
 The Streamable HTTP endpoint is `http://127.0.0.1:8010/mcp`. It exposes only explicit implementation claim, heartbeat, and Git-bound evidence submission tools. This development token is not a substitute for OIDC on a shared or remote service. See [OIDC identity and merge confirmation](docs/identity-and-merge-confirmation.md) for production API identity and the human-merge evidence flow.
 
+For a zero-cost local model canary, start an operator-owned OpenAI-compatible runtime on a literal
+loopback address, configure the disabled `local_model` block in `provider-policy.example.json`, and
+follow the [provider activation runbook](docs/provider-activation.md). No compatible runtime or model
+is bundled, downloaded, or activated by Eldridge.
+
 Run the verification suite:
 
 ```bash
@@ -199,6 +210,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Agent security and permissions](docs/agent-security-model.md)
 - [Provider interface](docs/provider-interface.md)
 - [Provider activation runbook](docs/provider-activation.md)
+- [G0DM0D3 design and provenance review](docs/research/g0dm0d3-lessons.md)
 - [GitHub CI evidence integration](docs/github-ci-integration.md)
 - [GitHub App activation record](docs/github-app-activation.md)
 - [OIDC identity and authoritative merge confirmation](docs/identity-and-merge-confirmation.md)
@@ -209,6 +221,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 4.2 acceptance record](docs/phase-4-2-acceptance.md)
 - [Phase 4.3 acceptance record](docs/phase-4-3-acceptance.md)
 - [Phase 4.4 acceptance record](docs/phase-4-4-acceptance.md)
+- [Phase 5.1 local model provider acceptance](docs/phase-5-1-acceptance.md)
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)
