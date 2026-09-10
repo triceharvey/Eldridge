@@ -14,6 +14,8 @@ from control_plane.domain import (
 )
 from control_plane.providers import LocalOpenAIProvider, LocalOpenAIProviderConfig
 
+DIGEST = "sha256:" + "a" * 64
+
 
 def _request() -> ProviderRequest:
     return ProviderRequest(
@@ -60,6 +62,18 @@ def test_local_provider_is_disabled_by_default() -> None:
     assert provider.health() is False
 
 
+@pytest.mark.parametrize("artifact_digest", (None, "sha256:" + "0" * 64))
+def test_enabled_local_provider_requires_nonplaceholder_digest(
+    artifact_digest: str | None,
+) -> None:
+    with pytest.raises(ValidationError, match="full sha256 artifact digest"):
+        LocalOpenAIProviderConfig(
+            enabled=True,
+            model="local-model",
+            artifact_digest=artifact_digest,
+        )
+
+
 def test_local_provider_normalizes_structured_response_without_credentials() -> None:
     requests: list[httpx.Request] = []
     model = "local-model@sha256:test"
@@ -91,7 +105,9 @@ def test_local_provider_normalizes_structured_response_without_credentials() -> 
         )
 
     provider = LocalOpenAIProvider(
-        LocalOpenAIProviderConfig(enabled=True, model=model),
+        LocalOpenAIProviderConfig(
+            enabled=True, model=model, reasoning_effort="none", artifact_digest=DIGEST
+        ),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
@@ -99,15 +115,16 @@ def test_local_provider_normalizes_structured_response_without_credentials() -> 
     result = provider.submit(_request())
 
     assert result.provider == "local-openai-compatible"
-    assert result.model == "local-model@sha256:test"
+    assert result.model == f"local-model@sha256:test@{DIGEST}"
     assert result.output == {"plan": ["step"], "assumptions": []}
     assert result.usage == {"input_tokens": 12, "output_tokens": 8}
+    assert json.loads(requests[-1].content)["reasoning_effort"] == "none"
     assert [request.url.path for request in requests] == ["/v1/models", "/v1/chat/completions"]
 
 
 def test_local_provider_health_requires_the_exact_configured_model() -> None:
     provider = LocalOpenAIProvider(
-        LocalOpenAIProviderConfig(enabled=True, model="required-model"),
+        LocalOpenAIProviderConfig(enabled=True, model="required-model", artifact_digest=DIGEST),
         client=httpx.Client(
             transport=httpx.MockTransport(
                 lambda _request: httpx.Response(200, json={"data": [{"id": "other-model"}]})
@@ -156,7 +173,7 @@ def test_local_provider_fails_closed_on_redirect_or_invalid_response(
     response: httpx.Response,
 ) -> None:
     provider = LocalOpenAIProvider(
-        LocalOpenAIProviderConfig(enabled=True, model="local-model"),
+        LocalOpenAIProviderConfig(enabled=True, model="local-model", artifact_digest=DIGEST),
         client=httpx.Client(transport=httpx.MockTransport(lambda _request: response)),
     )
 

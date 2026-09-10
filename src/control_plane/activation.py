@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
@@ -91,6 +92,8 @@ class LocalModelActivation(BaseModel):
     )
     max_tokens: int = Field(default=4096, ge=256, le=32_000)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
+    reasoning_effort: Literal["none", "low", "medium", "high"] | None = None
+    artifact_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     maximum_data_classification: DataClassification = DataClassification.RESTRICTED
     maximum_risk: RiskLevel = RiskLevel.MEDIUM
 
@@ -110,6 +113,8 @@ class LocalModelActivation(BaseModel):
             model=self.model,
             max_tokens=self.max_tokens,
             timeout_seconds=self.timeout_seconds,
+            reasoning_effort=self.reasoning_effort,
+            artifact_digest=self.artifact_digest,
         )
         return self
 
@@ -193,13 +198,15 @@ def activate_integrations(
                 model=local_model.model,
                 max_tokens=local_model.max_tokens,
                 timeout_seconds=local_model.timeout_seconds,
+                reasoning_effort=local_model.reasoning_effort,
+                artifact_digest=local_model.artifact_digest,
             )
         )
         profile = replace(
             profiles["local-openai-compatible"],
             enabled=True,
             healthy=True,
-            model_version=local_model.model,
+            model_version=local_provider.evidence_model_id,
             profile_version=policy.policy_version,
             maximum_data_classification=local_model.maximum_data_classification,
             maximum_risk=local_model.maximum_risk,

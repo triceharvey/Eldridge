@@ -63,7 +63,20 @@ The second zero-cost slice adds a disabled-by-default OpenAI-compatible local mo
 restricted to literal loopback, uses no credential, refuses redirects, begins unqualified for each
 exact model identifier, and remains behind the same validation, evidence, review, and approval gates.
 The adapter contract is complete; an actual runtime/model installation and live canary remain a
-separate resource and activation decision.
+separate resource and activation decision. A repeatable synthetic qualification command now covers
+structured output, hostile-instruction containment, and source-context fidelity while recording
+model-bound latency, token, and output-hash evidence. Passing this small canary permits only
+provisional low-risk evaluation; it does not automatically promote the model or grant authority.
+
+The next Phase 5 slice is a multi-model evaluation and refinement pipeline. For each authorized ask,
+Eldridge will select all eligible candidates under cost, privacy, risk, and capability policy; issue
+versioned prompt variants; validate outputs with deterministic project checks; request independent
+review where risk warrants it; refine failed prompts or artifacts within explicit iteration and budget
+limits; and promote the best validated result rather than a model's self-assessment. Every comparison
+must retain provider, model, artifact digest where available, prompt-contract version, inputs,
+validation evidence, cost, latency, and human disposition. "All available models" means all models
+that are configured, healthy, authorized for the data, and within the owner's cost ceiling; it never
+means bypassing credentials, terms, egress policy, or qualification gates.
 
 ## Rough completion estimate
 

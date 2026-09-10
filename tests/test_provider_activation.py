@@ -100,6 +100,7 @@ def test_local_model_activation_needs_no_secret_or_external_egress() -> None:
         "enabled": True,
         "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
         "model": "qwen-local",
+        "artifact_digest": "sha256:" + "a" * 64,
         "maximum_data_classification": "RESTRICTED",
         "maximum_risk": "MEDIUM",
     }
@@ -113,7 +114,7 @@ def test_local_model_activation_needs_no_secret_or_external_egress() -> None:
     assert len(activated.bindings) == 1
     profile = activated.bindings[0].profile
     assert profile.provider_id == "local-openai-compatible"
-    assert profile.model_version == "qwen-local"
+    assert profile.model_version == "qwen-local@sha256:" + "a" * 64
     assert profile.maximum_data_classification is DataClassification.RESTRICTED
 
 
@@ -125,6 +126,7 @@ def test_local_model_activation_rejects_non_loopback_endpoint() -> None:
                     "enabled": True,
                     "endpoint": "http://192.168.1.10:11434/v1/chat/completions",
                     "model": "remote-model",
+                    "artifact_digest": "sha256:" + "a" * 64,
                 }
             )
         )
