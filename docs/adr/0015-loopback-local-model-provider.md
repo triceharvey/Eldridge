@@ -22,8 +22,8 @@ same loopback origin.
 Activation is explicit in the versioned provider policy and requires no secret or external-egress
 approval. The adapter requests deterministic JSON output, normalizes usage, exposes no tool
 execution, and passes results through the same task validator, evidence store, capability router,
-reviews, and human gates as every other provider. The exact configured model identifier partitions
-qualification evidence.
+reviews, and human gates as every other provider. The configured model tag plus the operator-verified
+full artifact digest partitions qualification evidence.
 
 ## Consequences
 

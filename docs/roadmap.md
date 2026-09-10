@@ -40,7 +40,7 @@ Exit criteria: evidence is bound to a commit digest, stale approval is rejected 
 
 Implemented: disabled-by-default GitHub `check_run` webhook ingestion with HMAC-SHA256 verification, a least-authority CI integration identity, bounded payload validation, exact repository/revision matching, durable delivery idempotency, normalized success and failure evidence, payload digests, audit events, and no webhook-driven state transition. A separately disabled GitHub App client uses RS256 app identity and repository-scoped installation tokens to verify a remote branch head, create draft pull requests, and independently assess exact-revision checks and branch protection against operator policy. It requests no contents-write or merge authority. Durable human-authorized workflow commands persist PR intent before external execution, prevent idempotency-key drift, contain ambiguous outcomes as `UNKNOWN`, reconcile through a read-only remote search, and record revision-bound readiness snapshots. Production commands require allowlisted, signed OIDC identity. After a human merges in GitHub, the control plane independently confirms the exact PR, head revision, and merge commit through read-only GitHub calls before entering `MERGED`. Durable low-cardinality Prometheus metrics, an authenticated aggregate dashboard, separate non-root API and worker images, one-shot migrations, internal service networking, and Caddy automatic-TLS ingress are packaged with fail-closed operator inputs.
 
-Current rough status: Phase 0 and Phase 1 are complete; Phase 2 is about 95% complete pending operator-approved live-provider evidence. Phase 3 engineering is locally complete, and its least-authority GitHub App has been installed and exercised against a revision-bound draft PR. Final operational sign-off still requires environment-specific proof that cannot be fabricated in source code: immutable published image digests and scans, public DNS/TLS, a real OIDC tenant mapping, hosted PostgreSQL, protected-branch enforcement, webhook delivery, metrics scrape, backup/restore, and one complete human-approved PR. Phase 4 engineering is complete and validated for the approved USD 0 local target, including controlled recovery. Phase 5 remains evidence-gated.
+Current rough status: Phase 0 and Phase 1 are complete; Phase 2 is about 95% complete pending operator-approved live-provider evidence. Phase 3 engineering is locally complete, and its least-authority GitHub App has been installed and exercised against a revision-bound draft PR. Protected-branch enforcement and the complete human-approved protected-merge path have also been exercised on the public Eldridge repository. Final hosted operational sign-off still requires environment-specific proof that cannot be fabricated in source code: immutable published image digests and scans, public DNS/TLS, a real OIDC tenant mapping, hosted PostgreSQL, webhook delivery, metrics scrape, and backup/restore. Phase 4 engineering is complete and validated for the approved USD 0 local target, including controlled recovery. Phase 5.2's deterministic evaluation core is complete; durable campaign orchestration and provider execution remain evidence-gated. As a planning range rather than a release claim, Eldridge is roughly 94-96% complete as a local portfolio-grade control plane and 75-80% complete against the broader hosted production target.
 
 ## Phase 4 — Controlled deployment path
 
@@ -77,6 +77,13 @@ must retain provider, model, artifact digest where available, prompt-contract ve
 validation evidence, cost, latency, and human disposition. "All available models" means all models
 that are configured, healthy, authorized for the data, and within the owner's cost ceiling; it never
 means bypassing credentials, terms, egress policy, or qualification gates.
+
+Phase 5.2's first implementation slice now provides the side-effect-free decision core: full-digest
+candidate and validation evidence, deterministic selection independent of arrival order, bounded
+candidate/variant/iteration/cost policy, zero-cost refinement, and mandatory two-reviewer cross-family
+evidence for high-risk work. The next slice must add durable campaign state, authorized API commands,
+policy-eligible provider fan-out, revision-bound result storage, retry scheduling, and explicit
+artifact promotion without bypassing normal workflow or human gates.
 
 ## Rough completion estimate
 
