@@ -25,7 +25,12 @@ from control_plane.domain import (
     ReconciliationDecision,
     ValidationError,
 )
-from control_plane.evaluation import CandidateEvidence, DeterministicCheck, IndependentReview
+from control_plane.evaluation import (
+    CandidateEvidence,
+    DeterministicCheck,
+    IndependentReview,
+    PromptVariant,
+)
 from control_plane.github import normalize_check_run, verify_github_signature
 from control_plane.identity import OidcAuthenticator
 from control_plane.observability import render_dashboard, render_prometheus
@@ -233,6 +238,21 @@ class EvaluationBatchCreate(BaseModel):
 
     idempotency_key: str = Field(min_length=8, max_length=128)
     candidates: tuple[EvaluationCandidateCreate, ...] = Field(min_length=1, max_length=64)
+
+
+class PromptVariantCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    variant_id: str = Field(pattern=EVALUATION_IDENTIFIER_PATTERN)
+    instruction: str = Field(min_length=1, max_length=4_000, pattern=r"\S")
+
+
+class EvaluationExecutionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str = Field(min_length=1, max_length=64)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    prompt_variants: tuple[PromptVariantCreate, ...] = Field(min_length=1, max_length=8)
 
 
 def create_app(
@@ -599,6 +619,40 @@ def create_app(
             actor_id=principal_id,
             idempotency_key=request.idempotency_key,
             candidates=tuple(candidate.to_evidence() for candidate in request.candidates),
+        )
+
+    @app.post(
+        "/workflows/{workflow_id}/evaluation-campaigns/{campaign_id}/executions",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def execute_evaluation_campaign(
+        workflow_id: str,
+        campaign_id: str,
+        request: EvaluationExecutionCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.execute_evaluation_campaign(
+            workflow_id=workflow_id,
+            campaign_id=campaign_id,
+            task_id=request.task_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+            prompt_variants=tuple(
+                PromptVariant(variant.variant_id, variant.instruction)
+                for variant in request.prompt_variants
+            ),
+        )
+
+    @app.get("/workflows/{workflow_id}/evaluation-executions/{execution_id}")
+    def get_evaluation_execution(
+        workflow_id: str,
+        execution_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.get_evaluation_execution(
+            workflow_id, execution_id, principal_id=principal_id
         )
 
     @app.get("/ci-checks")

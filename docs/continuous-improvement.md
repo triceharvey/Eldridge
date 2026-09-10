@@ -51,6 +51,12 @@ New provider and model versions should first run against deterministic evaluatio
 
 The current implementation learns from real routed attempts. A later evaluation service should add signed benchmark observations, holdout suites, regression thresholds, drift alerts, and automatic demotion. Automatic promotion is intentionally excluded: evidence may recommend promotion, but an authorized human changes the provider's enabled scope.
 
+Phase 5.2C adds the committed execution half of that evaluation service for the zero-cost local
+profile. It fans each authorized prompt variant across all eligible local candidates, retains the
+exact workflow and provider snapshot, validates and hashes returned outputs, and refuses blind retry
+after an ambiguous outcome. These captured outputs are not learning evidence until trusted project
+checks and independent review bind their results to the stored output digest.
+
 ## Evidence quality and poisoning resistance
 
 Direct task success is useful but incomplete. Later phases should correlate producer performance with downstream test failures, security findings, review reversals, rollbacks, and escaped defects. These delayed outcomes must be attributed carefully so a provider is not rewarded for merely producing schema-valid output.
