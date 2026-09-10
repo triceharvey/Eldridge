@@ -6,8 +6,10 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -162,6 +164,96 @@ class ProviderObservation(Base):
     validation_passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvaluationCampaignRecord(Base):
+    __tablename__ = "evaluation_campaigns"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_evaluation_campaign_actor_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), index=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_contract_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    work_capability: Mapped[str] = mapped_column(String(64), nullable=False)
+    required_checks: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    risk: Mapped[str] = mapped_column(String(32), nullable=False)
+    max_candidates: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_prompt_variants: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_iterations: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_total_cost_microunits: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    minimum_independent_reviews: Mapped[int] = mapped_column(Integer, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    current_iteration: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    total_cost_microunits: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    winner_candidate_id: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class EvaluationBatchRecord(Base):
+    __tablename__ = "evaluation_batches"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "iteration", name="uq_evaluation_batch_iteration"),
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_evaluation_batch_actor_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), nullable=False, index=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    iteration: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    winner_candidate_id: Mapped[str | None] = mapped_column(String(128))
+    ranked_candidates: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    rejected_candidates: Mapped[dict[str, list[str]]] = mapped_column(JSON, nullable=False)
+    total_cost_microunits: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    routing_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvaluationCandidateRecord(Base):
+    __tablename__ = "evaluation_candidates"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "candidate_id", name="uq_evaluation_candidate_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    batch_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_batches.id"), nullable=False, index=True
+    )
+    candidate_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider_family: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    profile_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_variant_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_contract_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    iteration: Mapped[int] = mapped_column(Integer, nullable=False)
+    succeeded: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    output_digest: Mapped[str | None] = mapped_column(String(71))
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    cost_microunits: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    routing_score: Mapped[float] = mapped_column(Float, nullable=False)
+    checks: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    reviews: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    rejection_reasons: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    rank: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

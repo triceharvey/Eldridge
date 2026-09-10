@@ -49,8 +49,8 @@ def _candidate(
         checks=checks
         if checks is not None
         else (
-            DeterministicCheck("schema", True, DIGEST_B),
-            DeterministicCheck("security", True, DIGEST_C),
+            DeterministicCheck("schema", True, DIGEST_B, DIGEST_A),
+            DeterministicCheck("security", True, DIGEST_C, DIGEST_A),
         ),
         reviews=reviews,
     )
@@ -95,7 +95,7 @@ def test_selects_deterministic_winner_independent_of_input_order() -> None:
 def test_rejects_failed_or_missing_checks_and_requests_bounded_refinement() -> None:
     candidate = _candidate(
         "failed-check",
-        checks=(DeterministicCheck("schema", False, DIGEST_A),),
+        checks=(DeterministicCheck("schema", False, DIGEST_B, DIGEST_A),),
     )
 
     decision = MultiModelEvaluator().evaluate(_policy(), _batch(candidate))
@@ -120,8 +120,12 @@ def test_cost_ceiling_exhausts_without_promoting_a_valid_result() -> None:
 
 def test_high_risk_requires_two_cross_family_reviews() -> None:
     reviews = (
-        IndependentReview("reviewer-a", "family-b", True, DIGEST_B),
-        IndependentReview("reviewer-b", "family-c", True, DIGEST_C),
+        IndependentReview(
+            "reviewer-a", "family-b", "model-a", "profile-a", DIGEST_A, True, DIGEST_B
+        ),
+        IndependentReview(
+            "reviewer-b", "family-c", "model-b", "profile-b", DIGEST_A, True, DIGEST_C
+        ),
     )
     policy = _policy(risk=RiskLevel.HIGH, minimum_independent_reviews=2)
 
@@ -136,8 +140,24 @@ def test_high_risk_requires_two_cross_family_reviews() -> None:
                 "producer",
                 family="family-a",
                 reviews=(
-                    IndependentReview("reviewer-a", "family-a", True, DIGEST_B),
-                    IndependentReview("reviewer-b", "family-c", True, DIGEST_C),
+                    IndependentReview(
+                        "reviewer-a",
+                        "family-a",
+                        "model-a",
+                        "profile-a",
+                        DIGEST_A,
+                        True,
+                        DIGEST_B,
+                    ),
+                    IndependentReview(
+                        "reviewer-b",
+                        "family-c",
+                        "model-b",
+                        "profile-b",
+                        DIGEST_A,
+                        True,
+                        DIGEST_C,
+                    ),
                 ),
             )
         ),
@@ -152,8 +172,8 @@ def test_campaign_exhausts_at_iteration_limit() -> None:
     failed = _candidate(
         "failed",
         checks=(
-            DeterministicCheck("schema", True, DIGEST_A),
-            DeterministicCheck("security", False, DIGEST_B),
+            DeterministicCheck("schema", True, DIGEST_B, DIGEST_A),
+            DeterministicCheck("security", False, DIGEST_C, DIGEST_A),
         ),
         iteration=3,
     )
@@ -170,8 +190,8 @@ def test_zero_cost_campaign_can_refine_without_expanding_its_budget() -> None:
     failed = _candidate(
         "local-model",
         checks=(
-            DeterministicCheck("schema", True, DIGEST_A),
-            DeterministicCheck("security", False, DIGEST_B),
+            DeterministicCheck("schema", True, DIGEST_B, DIGEST_A),
+            DeterministicCheck("security", False, DIGEST_C, DIGEST_A),
         ),
     )
 
@@ -201,9 +221,9 @@ def test_high_risk_policy_cannot_reduce_review_floor() -> None:
 
 def test_evidence_boundary_rejects_non_boolean_results() -> None:
     with pytest.raises(ValueError, match="check passed must be a boolean"):
-        DeterministicCheck("schema", 1, DIGEST_A)  # type: ignore[arg-type]
+        DeterministicCheck("schema", 1, DIGEST_B, DIGEST_A)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="review passed must be a boolean"):
-        IndependentReview("reviewer", "family-b", "yes", DIGEST_A)  # type: ignore[arg-type]
+        IndependentReview("reviewer", "family-b", "model", "profile", DIGEST_A, "yes", DIGEST_B)  # type: ignore[arg-type]
 
 
 def test_candidate_boundary_rejects_boolean_numeric_fields() -> None:
@@ -211,6 +231,14 @@ def test_candidate_boundary_rejects_boolean_numeric_fields() -> None:
         _candidate("bad-latency", latency=True)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="candidate routing score must be numeric"):
         _candidate("bad-score", routing_score=False)  # type: ignore[arg-type]
+
+
+def test_candidate_evidence_must_bind_the_output_digest() -> None:
+    with pytest.raises(ValueError, match="checks must bind"):
+        _candidate(
+            "stale-check",
+            checks=(DeterministicCheck("schema", True, DIGEST_C, DIGEST_B),),
+        )
 
 
 def test_policy_boundary_requires_typed_risk_and_integer_limits() -> None:
