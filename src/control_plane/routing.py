@@ -54,6 +54,38 @@ class RoutingPurpose(StrEnum):
     REVIEW = "REVIEW"
 
 
+class RoutingObjective(StrEnum):
+    """Operator-selected optimization goal applied only after policy eligibility."""
+
+    BALANCED = "BALANCED"
+    QUALITY = "QUALITY"
+    SPEED = "SPEED"
+    FRUGAL = "FRUGAL"
+
+
+@dataclass(frozen=True)
+class ObjectiveWeights:
+    quality: float
+    cost: float
+    latency: float
+
+    def __post_init__(self) -> None:
+        values = (self.quality, self.cost, self.latency)
+        if any(value < 0.0 or value > 1.0 for value in values):
+            raise ValueError("objective weights must be between zero and one")
+        if abs(sum(values) - 1.0) > 1e-9:
+            raise ValueError("objective weights must sum to one")
+
+
+OBJECTIVE_PROFILE_VERSION = "routing-objectives/v1"
+OBJECTIVE_WEIGHTS: dict[RoutingObjective, ObjectiveWeights] = {
+    RoutingObjective.BALANCED: ObjectiveWeights(quality=0.75, cost=0.15, latency=0.10),
+    RoutingObjective.QUALITY: ObjectiveWeights(quality=0.90, cost=0.05, latency=0.05),
+    RoutingObjective.SPEED: ObjectiveWeights(quality=0.55, cost=0.10, latency=0.35),
+    RoutingObjective.FRUGAL: ObjectiveWeights(quality=0.55, cost=0.40, latency=0.05),
+}
+
+
 @dataclass(frozen=True)
 class CapabilityEvidence:
     sample_count: int = 0
@@ -111,12 +143,16 @@ class RoutingRequest:
     minimum_evidence_samples: int = 0
     producer_provider_id: str | None = None
     producer_family: str | None = None
+    objective: RoutingObjective = RoutingObjective.BALANCED
 
 
 @dataclass(frozen=True)
 class RankedCandidate:
     provider_id: str
     score: float
+    quality_utility: float
+    cost_utility: float
+    latency_utility: float
 
 
 @dataclass(frozen=True)
@@ -125,6 +161,8 @@ class RoutingDecision:
     ranked_candidates: tuple[RankedCandidate, ...]
     rejected: dict[str, tuple[str, ...]]
     policy_version: str
+    objective: RoutingObjective
+    objective_profile_version: str
 
     @property
     def blocked(self) -> bool:
@@ -134,7 +172,7 @@ class RoutingDecision:
 class CapabilityRouter:
     """Fail-closed provider selection using policy filters before quality scoring."""
 
-    policy_version = "capability-routing/v1"
+    policy_version = "capability-routing/v2"
 
     def route(
         self, request: RoutingRequest, profiles: tuple[ProviderProfile, ...]
@@ -152,7 +190,7 @@ class CapabilityRouter:
             if reasons:
                 rejected[profile.provider_id] = tuple(reasons)
                 continue
-            ranked.append(RankedCandidate(profile.provider_id, self._score(request, profile)))
+            ranked.append(self._score(request, profile))
 
         ranked.sort(key=lambda candidate: (-candidate.score, candidate.provider_id))
         return RoutingDecision(
@@ -160,6 +198,8 @@ class CapabilityRouter:
             ranked_candidates=tuple(ranked),
             rejected=rejected,
             policy_version=self.policy_version,
+            objective=request.objective,
+            objective_profile_version=OBJECTIVE_PROFILE_VERSION,
         )
 
     @staticmethod
@@ -203,7 +243,7 @@ class CapabilityRouter:
         return reasons
 
     @staticmethod
-    def _score(request: RoutingRequest, profile: ProviderProfile) -> float:
+    def _score(request: RoutingRequest, profile: ProviderProfile) -> RankedCandidate:
         if not request.required_capabilities:
             quality = 0.5
         else:
@@ -212,8 +252,33 @@ class CapabilityRouter:
                 for capability in request.required_capabilities
             ]
             quality = sum(scores) / len(scores)
-        cost_bonus = (CostTier.HIGH - profile.cost_tier) * 0.025
-        return round(quality + cost_bonus, 6)
+        cost_utility = (int(CostTier.HIGH) - int(profile.cost_tier)) / int(CostTier.HIGH)
+        observed_latencies = [
+            evidence.p95_latency_seconds
+            for capability in request.required_capabilities
+            if (evidence := profile.evidence.get(capability)) is not None
+            and evidence.p95_latency_seconds is not None
+        ]
+        latency_utility = 0.5
+        if observed_latencies:
+            raw_latency_utility = 1.0 / (
+                1.0 + (sum(observed_latencies) / len(observed_latencies)) / 30.0
+            )
+            # A quick failure is not useful speed. Reliability-adjust the observed latency.
+            latency_utility = raw_latency_utility * quality
+        weights = OBJECTIVE_WEIGHTS[request.objective]
+        score = (
+            quality * weights.quality
+            + cost_utility * weights.cost
+            + latency_utility * weights.latency
+        )
+        return RankedCandidate(
+            provider_id=profile.provider_id,
+            score=round(score, 6),
+            quality_utility=round(quality, 6),
+            cost_utility=round(cost_utility, 6),
+            latency_utility=round(latency_utility, 6),
+        )
 
 
 def interoperability_profiles() -> tuple[ProviderProfile, ...]:

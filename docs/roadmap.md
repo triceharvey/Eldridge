@@ -54,6 +54,11 @@ Exit criteria: the control plane cannot deploy without a valid environment- and 
 
 Only measured needs justify Kubernetes jobs, external object storage, PostgreSQL HA, dedicated policy service, queue/broker, multi-tenancy, quotas, and immutable audit export. The provider-routing policy foundation was advanced into Phase 2; Phase 5 operationalizes it with durable performance telemetry, quotas, model-version requalification, load/failure evidence, and SLOs before choosing scaling technology.
 
+The first low-cost Phase 5 slice adds operator-owned `BALANCED`, `QUALITY`, `SPEED`, and `FRUGAL`
+routing objectives with versioned, interpretable quality, cost, and latency components. Eligibility
+remains fail-closed and is evaluated before optimization. The external G0DM0D3 design review and
+Apache/AGPL provenance boundary are recorded in `docs/research/g0dm0d3-lessons.md`.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.
