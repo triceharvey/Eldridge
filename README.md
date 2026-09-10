@@ -3,13 +3,13 @@
 [![CI](https://github.com/triceharvey/Eldridge/actions/workflows/ci.yml/badge.svg)](https://github.com/triceharvey/Eldridge/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB.svg)](https://www.python.org/)
 
-**Status:** private validation and public-launch hardening. The control plane is not yet a
-hosted service, and all commercial providers and privileged integrations remain disabled by
-default.
+**Status:** Public portfolio release with Phase 4 controlled-deployment validation complete on
+the USD 0 local target. The control plane is not yet a hosted service, and all commercial
+providers and privileged integrations remain disabled by default.
 
 This repository defines a production-minded control plane for coordinating specialized AI engineering agents under explicit policy, isolation, audit, and human approval. The system is not a group chat for models. It is a workflow engine in which agents are treated as untrusted, non-human service identities and deterministic controls outrank model recommendations.
 
-The repository has completed **Phase 0** and the **Phase 1 deterministic control-plane skeleton** approved on 2026-09-06. Phase 2 engineering controls are complete locally except for explicitly approved paid-provider canaries. Phase 3 engineering is locally complete: revision-bound GitHub CI evidence, draft PR proposals, independent merge-readiness assessment, OIDC-backed production identity, read-only post-merge confirmation, durable Prometheus metrics, an authenticated dashboard, and TLS-ready container packaging. Environment-specific hosted activation evidence remains pending. The system cannot execute a merge, deploy, access production secrets, or contact an external provider by default.
+The repository has completed **Phase 0** and the **Phase 1 deterministic control-plane skeleton** approved on 2026-09-06. Phase 2 engineering controls are complete locally except for explicitly approved paid-provider canaries. Phase 3 engineering is locally complete: revision-bound GitHub CI evidence, draft PR proposals, independent merge-readiness assessment, OIDC-backed production identity, read-only post-merge confirmation, durable Prometheus metrics, an authenticated dashboard, and TLS-ready container packaging. Phase 4 engineering is complete for the approved USD 0 local target: immutable plans, exact expiring deployment and rollback approvals, short-lived operation-bound workload identity, bounded deployment, verification, containment, and controlled recovery are implemented and exercised. Environment-specific hosted activation evidence remains pending. The system cannot execute a merge, perform a production deployment, access production secrets, or contact an external model provider by default.
 
 The worker composes an operator-registered repository, per-task Git worktree, typed model tool proposals, and the hardened Docker executor. Successful task-branch commits are bound to the real Git revision. Provider and executor calls occur outside database transactions under renewable leases; expired running work blocks for explicit human reconciliation, and late results are rejected. External provider activation remains an explicit human decision.
 
@@ -72,6 +72,78 @@ The current implementation provides:
 - hash-chained structured audit events and revision-bound artifacts; and
 - unit, API, policy, failure, provider, audit, and PostgreSQL integration tests.
 
+## Phase 4.1 controlled-deployment foundation
+
+The approved Phase 4.1 slice provides:
+
+- operator-owned immutable development or staging environment records;
+- deterministic SHA-256 deployment plans bound to a confirmed merge revision and artifact digests;
+- typed deployment operations with no shell or arbitrary provider request surface;
+- a separate, expiring human `DEPLOY` approval bound to environment, revision, plan digest, and policy version;
+- execution intent committed before adapter invocation and one-time approval consumption;
+- durable deployment attempts and independent verification records; and
+- a dry-run adapter that is structurally prohibited from requesting credentials or contacting a target.
+
+Production environments and credential-requiring adapters fail closed in Phase 4.1. A successful
+dry run proves orchestration and policy behavior but never marks a workflow `DEPLOYED`.
+
+## Phase 4.2 zero-cost identity boundary
+
+The approved first target is local Docker with optional ephemeral k3d and a USD 0 incremental
+infrastructure ceiling. OpenTofu is the provider-neutral infrastructure layer. A deny-by-default
+credential broker prevents accidental issuance, while a policy-bound fake broker returns only
+simulated issuance metadata: it creates no token, exposes no secret, and contacts no issuer.
+
+A later temporary hosted exercise is capped at approximately USD 5 total and remains subject to
+a separate provider, plan, and execution decision. Azure and persistent hosted K3s remain future
+alternatives rather than active dependencies.
+
+The first OpenTofu validator now produces sanitized, digest-bound evidence from JSON plan
+fixtures and rejects unpinned providers, destructive actions, imports, provisioners, child
+modules, drift, sensitive markers, changed outputs, and any cost above zero. Its local adapter is
+simulation-only and proves that it starts no subprocess and contacts no target.
+
+The ephemeral k3d identity exercise is also complete. A digest-pinned, single-server local
+cluster verified two intended namespace permissions, five sensitive/write/lateral denials, a
+subject- and audience-bound ten-minute projected service-account token, and automatic teardown.
+The token was never logged or persisted, and no named cluster, container, network, or volume
+remained afterward.
+
+Phase 4.2 now connects that mechanism to the `CredentialBroker` contract through an explicitly
+enabled Kubernetes TokenRequest broker. It rejects any environment, adapter, operation, scope,
+audience, subject, digest, or lifetime mismatch before issuance; revalidates the returned claims;
+discards the token; and returns only a random opaque reference plus sanitized metadata. The
+normal runtime still installs the deny-all broker, and no credential-requiring deployment adapter
+is enabled.
+
+## Phase 4.3 bounded local deployment
+
+The explicitly activated `local-k3d-configmap-v1` adapter updates only the pre-created
+`eldridge-release` ConfigMap over a loopback Kubernetes API. It accepts one artifact-bound typed
+operation and the fixed local environment, verification probes, and rollback reference. The
+service commits intent and consumes the exact deployment approval before a plan-bound broker can
+issue a 600-second credential. Raw token material exists only inside the broker-to-adapter
+callback and is excluded from durable evidence.
+
+The live exercise proved a real first update and an idempotent no-change replay, separate target
+observation, exact revision/plan/artifact verification, four intended RBAC permissions, eight
+explicit denials, ambiguous-write containment, and complete cluster cleanup at USD 0. This is a
+control-path release marker, not a full application deployment. Phase 4.4 extends this exact
+boundary with separately authorized recovery.
+
+## Phase 4.4 controlled recovery
+
+Recovery is a separate privileged command with distinct approval and execution capabilities. Its
+approval binds the exact failed deployment attempt, environment, plan digest, revision, policy,
+rollback reference, rationale, and expiry. The service persists intent and consumes that approval
+before obtaining a new 600-second credential explicitly bound to `ROLLBACK`.
+
+The local exercise intentionally corrupted the post-deployment revision, proved containment in
+`ROLLBACK_REQUIRED`, restored only the recorded pre-deployment snapshot, independently verified
+the complete marker, preserved a valid audit chain and recovery duration, and entered the
+terminal `ROLLED_BACK` state. Ambiguous recovery remains non-replayable and contained. This closes
+Phase 4 locally without enabling hosted or production deployment.
+
 ## Run locally
 
 Create an isolated Python environment and install the project:
@@ -132,6 +204,15 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [OIDC identity and authoritative merge confirmation](docs/identity-and-merge-confirmation.md)
 - [Phase 3 deployment boundary](deployment/README.md)
 - [Phase 3 acceptance record](docs/phase-3-acceptance.md)
+- [Phase 4 controlled deployment design](docs/phase-4-deployment-design.md)
+- [Phase 4.1 acceptance record](docs/phase-4-1-acceptance.md)
+- [Phase 4.2 acceptance record](docs/phase-4-2-acceptance.md)
+- [Phase 4.3 acceptance record](docs/phase-4-3-acceptance.md)
+- [Phase 4.4 acceptance record](docs/phase-4-4-acceptance.md)
+- [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
+- [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
+- [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)
+- [Ephemeral k3d identity-boundary validation](docs/k3d-identity-validation.md)
 - [Onboarding other projects](docs/project-onboarding.md)
 - [Proposed data model](docs/data-model.md)
 - [Threat model](docs/threat-model.md)

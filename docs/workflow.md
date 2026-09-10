@@ -35,6 +35,9 @@ stateDiagram-v2
     APPROVED --> MERGED: protected Git service confirms merge
     MERGED --> AWAITING_DEPLOYMENT_APPROVAL: deployment requested
     AWAITING_DEPLOYMENT_APPROVAL --> DEPLOYED: separate human approval and deployment evidence
+    AWAITING_DEPLOYMENT_APPROVAL --> ROLLBACK_REQUIRED: changed target fails verification
+    DEPLOYED --> ROLLBACK_REQUIRED: later verification requires recovery
+    ROLLBACK_REQUIRED --> ROLLED_BACK: exact rollback approval and verified recovery
     CREATED --> CANCELLED
     PLANNING --> CANCELLED
     BLOCKED --> CANCELLED
@@ -45,11 +48,19 @@ stateDiagram-v2
     AWAITING_HUMAN_APPROVAL --> CANCELLED
     MERGED --> [*]
     DEPLOYED --> [*]
+    ROLLED_BACK --> [*]
     REJECTED --> [*]
     CANCELLED --> [*]
 ```
 
-`FAILED` and `ROLLBACK_REQUIRED` are exceptional states omitted from the main diagram for readability. A non-retryable failure from any active execution stage enters `FAILED`. A deployment that completes but fails verification enters `ROLLBACK_REQUIRED`, never directly `FAILED`, because the system may already have changed.
+`FAILED` represents an outcome proven not to have changed the target. A deployment that changes
+the target but fails verification enters `ROLLBACK_REQUIRED`, never directly `FAILED`. Only an
+exact, separately approved rollback that restores and independently verifies the recorded prior
+state enters `ROLLED_BACK`; ambiguous recovery remains contained.
+
+Phase 4.1 exercises this boundary with a no-credential dry-run adapter. A successful simulation
+records an attempt and verification but remains in `AWAITING_DEPLOYMENT_APPROVAL`; only a later
+approved adapter that can prove an actual target revision and health may enter `DEPLOYED`.
 
 ## State predicates
 
@@ -66,6 +77,7 @@ stateDiagram-v2
 | `APPROVED` | Eligible human approved `MERGE` for exact repository, branch/revision, workflow, and expiry window |
 | `MERGED` | Git provider independently confirms protected-branch merge commit |
 | `DEPLOYED` | Separate `DEPLOY` approval, environment authorization, successful deployment record, and post-deploy verification |
+| `ROLLED_BACK` | Separate exact `ROLLBACK` approval, durable recovery attempt, restored recorded snapshot, and independent recovery verification |
 
 Suspicious or adversarial input enters `BLOCKED` before any task is scheduled. Only a human principal with `DISPOSITION_WORKFLOW` may either reject it or resume local contained planning with a rationale. This command cannot release a block caused by provider qualification, policy, or missing capability, so disposition is not a general-purpose bypass.
 
@@ -81,6 +93,11 @@ Forbidden examples include:
 - an `IMPLEMENTER` principal creating an approval for its own workflow;
 - reusing an approval after the approved revision changes; and
 - a worker advancing a task whose lease is expired or owned by another worker.
+- a deployment using an approval for another environment, revision, plan digest, or policy;
+- an expired or already consumed deployment approval; and
+- a rollback approval for another attempt, environment, plan, revision, policy, or rollback reference;
+- an ambiguous rollback replay; and
+- a production target or credential-requiring adapter without explicit activation.
 
 ## Tasks, attempts, and runs
 

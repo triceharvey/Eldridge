@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: eldridge-validation
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: eldridge-denied
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployment-worker
+  namespace: eldridge-validation
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eldridge-release
+  namespace: eldridge-validation
+  labels:
+    app.kubernetes.io/managed-by: eldridge
+data: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deployment-observer
+  namespace: eldridge-validation
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - eldridge-release
+    verbs:
+      - get
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployment-observer
+  namespace: eldridge-validation
+subjects:
+  - kind: ServiceAccount
+    name: deployment-worker
+    namespace: eldridge-validation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: deployment-observer

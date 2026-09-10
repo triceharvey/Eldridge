@@ -24,6 +24,7 @@ class WorkflowState(StrEnum):
     BLOCKED = "BLOCKED"
     CANCELLED = "CANCELLED"
     ROLLBACK_REQUIRED = "ROLLBACK_REQUIRED"
+    ROLLED_BACK = "ROLLED_BACK"
 
 
 class TaskStatus(StrEnum):
@@ -84,11 +85,18 @@ class Capability(StrEnum):
     ASSESS_MERGE_READINESS = "ASSESS_MERGE_READINESS"
     RECONCILE_GIT_OPERATION = "RECONCILE_GIT_OPERATION"
     CONFIRM_GIT_MERGE = "CONFIRM_GIT_MERGE"
+    MANAGE_DEPLOYMENT_ENVIRONMENTS = "MANAGE_DEPLOYMENT_ENVIRONMENTS"
+    CREATE_DEPLOYMENT_PLAN = "CREATE_DEPLOYMENT_PLAN"
+    EXECUTE_DEPLOYMENT = "EXECUTE_DEPLOYMENT"
+    APPROVE_ROLLBACK = "APPROVE_ROLLBACK"
+    EXECUTE_ROLLBACK = "EXECUTE_ROLLBACK"
+    READ_DEPLOYMENT = "READ_DEPLOYMENT"
 
 
 class ApprovalAction(StrEnum):
     MERGE = "MERGE"
     DEPLOY = "DEPLOY"
+    ROLLBACK = "ROLLBACK"
 
 
 class ApprovalDecision(StrEnum):
@@ -155,6 +163,14 @@ class IntegrationDisabledError(ControlPlaneError):
     pass
 
 
+class DeploymentOutcomeUnknownError(ControlPlaneError):
+    """The target may have changed and must be reconciled without an automatic retry."""
+
+
+class DeploymentVerificationError(ControlPlaneError):
+    """A known target change could not be verified and requires rollback disposition."""
+
+
 class IntegrationResponseError(ControlPlaneError):
     pass
 
@@ -183,9 +199,17 @@ ROLE_CAPABILITIES: dict[AgentRole, frozenset[Capability]] = {
             Capability.ASSESS_MERGE_READINESS,
             Capability.RECONCILE_GIT_OPERATION,
             Capability.CONFIRM_GIT_MERGE,
+            Capability.MANAGE_DEPLOYMENT_ENVIRONMENTS,
+            Capability.CREATE_DEPLOYMENT_PLAN,
+            Capability.EXECUTE_DEPLOYMENT,
+            Capability.APPROVE_ROLLBACK,
+            Capability.EXECUTE_ROLLBACK,
+            Capability.READ_DEPLOYMENT,
         }
     ),
-    AgentRole.AUDITOR: frozenset({Capability.READ_WORKFLOW, Capability.READ_AUDIT}),
+    AgentRole.AUDITOR: frozenset(
+        {Capability.READ_WORKFLOW, Capability.READ_AUDIT, Capability.READ_DEPLOYMENT}
+    ),
     AgentRole.IDE_INTEGRATION: frozenset(
         {
             Capability.CLAIM_IDE_TASK,

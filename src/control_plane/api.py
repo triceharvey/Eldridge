@@ -8,9 +8,10 @@ import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import text
 
+from control_plane.deployment import EnvironmentClassification
 from control_plane.domain import (
     ApprovalAction,
     ApprovalDecision,
@@ -45,6 +46,8 @@ class WorkflowCreate(BaseModel):
 
 
 class ApprovalCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     workflow_id: str
     action: ApprovalAction = ApprovalAction.MERGE
     target: str = Field(min_length=1, max_length=500)
@@ -52,6 +55,9 @@ class ApprovalCreate(BaseModel):
     decision: ApprovalDecision
     rationale: str = Field(min_length=1, max_length=2_000)
     expires_in_minutes: int = Field(default=15, ge=1, le=1440)
+    environment_id: str | None = Field(default=None, min_length=1, max_length=128)
+    plan_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    deployment_attempt_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class DispositionCreate(BaseModel):
@@ -78,6 +84,58 @@ class MergeReadinessCreate(BaseModel):
 
 class MergeConfirmationCreate(BaseModel):
     assessment_id: str = Field(min_length=1, max_length=64)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class DeploymentEnvironmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    environment_id: str = Field(min_length=1, max_length=128, pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    name: str = Field(min_length=1, max_length=200)
+    classification: EnvironmentClassification = EnvironmentClassification.DEVELOPMENT
+    repository: str = Field(min_length=3, max_length=500)
+    base_branch: str = Field(min_length=1, max_length=200)
+    resource_scope: tuple[str, ...] = Field(min_length=1, max_length=100)
+    required_checks: tuple[str, ...] = Field(default=(), max_length=100)
+    required_attestations: tuple[str, ...] = Field(default=(), max_length=100)
+    verification_policy: tuple[str, ...] = Field(min_length=1, max_length=100)
+    rollback_policy: str = Field(min_length=1, max_length=256)
+    policy_version: str = Field(min_length=1, max_length=64)
+    provider: Literal["dry-run", "local-k3d"] = "dry-run"
+    account_scope: Literal["none", "local"] = "none"
+    region: Literal["none", "local"] = "none"
+    adapter_id: Literal["dry-run-v1", "local-k3d-configmap-v1"] = "dry-run-v1"
+
+
+class DeploymentOperationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["VERIFY_ARTIFACT", "APPLY_RELEASE", "UPDATE_SERVICE"]
+    resource_id: str = Field(min_length=1, max_length=256)
+    artifact_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class DeploymentPlanCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    environment_id: str = Field(min_length=1, max_length=128)
+    artifact_digests: tuple[str, ...] = Field(min_length=1, max_length=100)
+    operations: tuple[DeploymentOperationCreate, ...] = Field(min_length=1, max_length=100)
+    declared_impact: str = Field(min_length=1, max_length=4_000)
+    verification_probes: tuple[str, ...] = Field(min_length=1, max_length=100)
+    rollback_reference: str = Field(min_length=1, max_length=256)
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class DeploymentExecutionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class DeploymentRollbackCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     idempotency_key: str = Field(min_length=8, max_length=128)
 
 
@@ -121,10 +179,10 @@ def create_app(
 
     app = FastAPI(
         title="AI Engineering Control Plane",
-        version="0.3.0",
+        version="0.4.0",
         description=(
-            "Phase 3 Git/CI integration control plane. OIDC is mandatory outside development "
-            "and test; the development identity header is ignored when OIDC is active."
+            "Phase 4.1 policy-controlled AI engineering control plane. OIDC is mandatory outside "
+            "development and test; the development identity header is ignored when OIDC is active."
         ),
         lifespan=lifespan,
     )
@@ -239,7 +297,130 @@ def create_app(
             decision=request.decision,
             rationale=request.rationale,
             expires_in_minutes=request.expires_in_minutes,
+            environment_id=request.environment_id,
+            plan_digest=request.plan_digest,
+            deployment_attempt_id=request.deployment_attempt_id,
         )
+
+    @app.post("/deployment-environments", status_code=status.HTTP_201_CREATED)
+    def register_deployment_environment(
+        request: DeploymentEnvironmentCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.register_deployment_environment(
+            actor_id=principal_id,
+            environment_id=request.environment_id,
+            name=request.name,
+            classification=request.classification,
+            repository=request.repository,
+            base_branch=request.base_branch,
+            resource_scope=request.resource_scope,
+            required_checks=request.required_checks,
+            required_attestations=request.required_attestations,
+            verification_policy=request.verification_policy,
+            rollback_policy=request.rollback_policy,
+            policy_version=request.policy_version,
+            provider=request.provider,
+            account_scope=request.account_scope,
+            region=request.region,
+            adapter_id=request.adapter_id,
+        )
+
+    @app.get("/deployment-environments")
+    def list_deployment_environments(
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> list[dict[str, Any]]:
+        return service.list_deployment_environments(principal_id=principal_id)
+
+    @app.post("/workflows/{workflow_id}/deployment-plans", status_code=status.HTTP_201_CREATED)
+    def create_deployment_plan(
+        workflow_id: str,
+        request: DeploymentPlanCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.create_deployment_plan(
+            workflow_id=workflow_id,
+            actor_id=principal_id,
+            environment_id=request.environment_id,
+            artifact_digests=request.artifact_digests,
+            operations=tuple(item.model_dump() for item in request.operations),
+            declared_impact=request.declared_impact,
+            verification_probes=request.verification_probes,
+            rollback_reference=request.rollback_reference,
+            idempotency_key=request.idempotency_key,
+        )
+
+    @app.get("/workflows/{workflow_id}/deployment-plans")
+    def list_deployment_plans(
+        workflow_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> list[dict[str, Any]]:
+        return service.list_deployment_plans(workflow_id, principal_id=principal_id)
+
+    @app.post("/workflows/{workflow_id}/deployment-plans/{plan_id}/dry-run")
+    def execute_deployment_dry_run(
+        workflow_id: str,
+        plan_id: str,
+        request: DeploymentExecutionCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.execute_deployment_dry_run(
+            workflow_id=workflow_id,
+            plan_id=plan_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+        )
+
+    @app.post("/workflows/{workflow_id}/deployment-plans/{plan_id}/local-execution")
+    def execute_local_deployment(
+        workflow_id: str,
+        plan_id: str,
+        request: DeploymentExecutionCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.execute_local_deployment(
+            workflow_id=workflow_id,
+            plan_id=plan_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+        )
+
+    @app.get("/workflows/{workflow_id}/deployment-attempts")
+    def list_deployment_attempts(
+        workflow_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> list[dict[str, Any]]:
+        return service.list_deployment_attempts(workflow_id, principal_id=principal_id)
+
+    @app.post("/workflows/{workflow_id}/deployment-attempts/{attempt_id}/rollback")
+    def execute_local_rollback(
+        workflow_id: str,
+        attempt_id: str,
+        request: DeploymentRollbackCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.execute_local_rollback(
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+        )
+
+    @app.get("/workflows/{workflow_id}/deployment-rollbacks")
+    def list_deployment_rollbacks(
+        workflow_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> list[dict[str, Any]]:
+        return service.list_deployment_rollbacks(workflow_id, principal_id=principal_id)
 
     @app.get("/events")
     def list_events(

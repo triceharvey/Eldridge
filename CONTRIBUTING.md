@@ -1,7 +1,7 @@
 # Contributing to Eldridge
 
-Eldridge is currently owner-led and pre-release. Focused issues and pull requests are welcome
-after the repository becomes public, but acceptance is not guaranteed.
+Eldridge is currently owner-led and pre-release. Focused issues and pull requests are welcome,
+but acceptance is not guaranteed.
 
 ## Development workflow
 

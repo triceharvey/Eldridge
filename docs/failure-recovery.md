@@ -19,6 +19,7 @@ Recovery must preserve evidence and distinguish retryable work from ambiguous ex
 | Audit event write fails | Transaction failure | Roll back the associated state/action | Repair storage before retrying command |
 | Git/CI callback duplicated or reordered | Delivery/idempotency ID and revision | Deduplicate; retain event; recompute only legal predicate | Reconcile if remote and local state disagree |
 | Partial deployment | Deployment status/health verification | Enter `ROLLBACK_REQUIRED`; stop further rollout | Choose rollback, roll-forward, or containment using runbook |
+| Ambiguous rollback | Timeout or transport loss after rollback request | Record non-replayable `UNKNOWN`; remain `ROLLBACK_REQUIRED` | Observe the target and authorize a new exact recovery decision |
 | Budget exhaustion | Token/cost/time counters | Cancel if safe; mark blocked/failed; prevent fan-out | Increase budget with scoped approval or reduce task |
 | Cancellation during execution | Cancellation token/state | Stop new work; terminate after grace period; reject late result | Reconcile external side effects if termination was uncertain |
 
@@ -43,6 +44,12 @@ Leases replace indefinite locks. A lease includes owner, token, expiry, and hear
 ## Rollback
 
 Code changes normally recover by creating a new reviewed revision, not rewriting Git history. Control-plane database migrations require tested forward and rollback/restore procedures. Production rollback is not assumed safe: schema changes, data writes, and irreversible operations may require roll-forward. Therefore a failed deployment enters a decision state with captured evidence.
+
+The Phase 4.4 local path implements one reversible exception: an eligible human approves
+`ROLLBACK` for the exact failed attempt and recorded release-marker snapshot. The control plane
+commits intent before a fresh operation-bound credential is requested, restores only that
+snapshot, and enters `ROLLED_BACK` only after an independent exact read. A rejection or ambiguous
+rollback leaves the workflow in `ROLLBACK_REQUIRED`.
 
 ## Recovery exercises
 

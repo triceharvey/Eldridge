@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-engineering-control-plane"
-version = "0.3.0"
+version = "0.4.0"
 description = "A policy-controlled, auditable orchestration plane for specialized AI engineering agents"
 readme = "README.md"
 license = "Apache-2.0"
@@ -45,6 +45,7 @@ addopts = "-ra --strict-markers"
 testpaths = ["tests"]
 markers = [
   "docker: requires a running Docker daemon and the pinned sandbox image",
+  "k3d: creates and automatically destroys the named local k3d validation cluster",
   "live_provider: incurs external network activity and may incur provider cost",
   "postgres: requires CONTROL_PLANE_TEST_DATABASE_URL pointing to PostgreSQL",
 ]

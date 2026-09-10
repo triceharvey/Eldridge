@@ -54,9 +54,16 @@ to the trusted worker process, and revoke the local-validation key.
 Using Client ID `Iv23liW43F2SDTPPFkvA` and installation `160167966`, the implemented
 `GitHubAppClient` successfully requested its narrowed installation token and completed a
 read-only pull-request query for `triceharvey/Eldridge`. The client rejected broader
-permissions by design and returned no matching pull request for `main`, as expected.
+permissions by design. It then verified the exact remote revision and created draft pull
+request #2 using pull-request write authority without contents-write or merge authority.
+That pull request advanced to ready-for-review only after the owner approved the Phase 4 design
+and the Phase 4.1 implementation passed local and hosted CI.
 
-Webhook delivery, protected-branch evidence, and an end-to-end draft pull request remain
-separate gates. Webhooks will not be enabled against a localhost development server. GitHub
-currently requires either public visibility or a qualifying paid plan before branch
-protection can be activated on this private personal repository.
+Webhook delivery, human review, and merge reconciliation remain separate gates. Webhooks will
+not be enabled against a localhost development server. While the repository was private,
+GitHub's branch-protection endpoint returned HTTP 403 and the readiness client correctly treated
+that as `branch_protection_unverifiable`. After the public-readiness review passed, the owner
+authorized public visibility on 2026-09-09. The `main` rule now applies to administrators,
+requires pull requests, strict `gitleaks`, `package`, and `test` checks, linear history, and
+conversation resolution, and prohibits force-pushes and branch deletion. No merge was performed
+as part of activation.

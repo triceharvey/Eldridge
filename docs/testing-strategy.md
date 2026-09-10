@@ -42,6 +42,12 @@ Drive the public API through one deterministic workflow: request, plan, independ
 
 Phase 3 also builds separate API and trusted-worker container targets, inspects their non-root runtime identities, validates the rendered production Compose model, starts the read-only API image against PostgreSQL, and probes liveness plus authenticated Prometheus exposition. Hosted acceptance adds real OIDC, GitHub protected-branch, webhook, TLS, scrape, and backup/restore evidence.
 
+Phase 4.1 drives the deployment command API through immutable environment registration, exact
+plan creation, separate approval, intent commit, simulated execution, observation, and
+verification. Negative cases reject production environments, credential-bearing adapters,
+unknown operation types and fields, unbound artifacts, wrong plan digests, expired approvals,
+agent authority, and idempotency-key drift.
+
 ## Critical acceptance cases
 
 | Case | Expected result |

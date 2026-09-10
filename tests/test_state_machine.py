@@ -8,6 +8,7 @@ def test_expected_happy_path_transitions_are_allowed() -> None:
     assert_transition_allowed(WorkflowState.CREATED, WorkflowState.PLANNING)
     assert_transition_allowed(WorkflowState.IMPLEMENTING, WorkflowState.TESTING)
     assert_transition_allowed(WorkflowState.CODE_REVIEW, WorkflowState.AWAITING_HUMAN_APPROVAL)
+    assert_transition_allowed(WorkflowState.ROLLBACK_REQUIRED, WorkflowState.ROLLED_BACK)
 
 
 @pytest.mark.parametrize(
