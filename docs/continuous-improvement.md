@@ -71,6 +71,12 @@ policy-eligible provider other than the producer. High-risk orchestration also r
 provider family and selects distinct reviewer families. A timeout never becomes a positive learning signal:
 it remains `UNKNOWN` until a human conservatively marks it failed.
 
+Phase 5.2F makes refinement evidence-bound instead of free-form: every post-initial execution must
+match a human-committed repair plan tied to the prior failed batch and exact workflow snapshot. A
+winner becomes a promoted artifact only through a separate human command binding its digest and
+revision. That record does not qualify a provider or inherit merge, deployment, or publication
+authority.
+
 ## Evidence quality and poisoning resistance
 
 Direct task success is useful but incomplete. Later phases should correlate producer performance with downstream test failures, security findings, review reversals, rollbacks, and escaped defects. These delayed outcomes must be attributed carefully so a provider is not rewarded for merely producing schema-valid output.

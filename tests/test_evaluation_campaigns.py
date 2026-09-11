@@ -5,7 +5,12 @@ from dataclasses import replace
 import pytest
 
 from control_plane.domain import AuthorizationError, ConflictError, ValidationError
-from control_plane.evaluation import CandidateEvidence, DeterministicCheck, IndependentReview
+from control_plane.evaluation import (
+    CandidateEvidence,
+    DeterministicCheck,
+    IndependentReview,
+    PromptVariant,
+)
 from control_plane.routing import RiskLevel, WorkCapability
 from control_plane.service import ControlPlaneService
 
@@ -122,12 +127,21 @@ def test_campaign_persists_bounded_refinement_across_iterations(
         idempotency_key="evaluation-first-batch",
         candidates=(_candidate("candidate-first", security_passed=False),),
     )
+    repair = service.plan_evaluation_repair(
+        workflow_id=str(workflow["id"]),
+        campaign_id=str(campaign["id"]),
+        actor_id="dev-operator",
+        idempotency_key="evaluation-second-repair",
+        prompt_variants=(PromptVariant("variant-2", "Correct the failed security evidence."),),
+        rationale="Bind iteration two to the failed first batch.",
+    )
     passed = service.submit_evaluation_evidence(
         workflow_id=str(workflow["id"]),
         campaign_id=str(campaign["id"]),
         actor_id="dev-operator",
         idempotency_key="evaluation-second-batch",
         candidates=(_candidate("candidate-second", iteration=2),),
+        repair_id=str(repair["id"]),
     )
     stored = service.get_evaluation_campaign(
         str(workflow["id"]), str(campaign["id"]), principal_id="dev-operator"

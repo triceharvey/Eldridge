@@ -42,6 +42,10 @@ class EvaluationReconciliationDecision(StrEnum):
     MARK_FAILED = "MARK_FAILED"
 
 
+class EvaluationRecoveryDecision(StrEnum):
+    MARK_INTERRUPTED_FAILED = "MARK_INTERRUPTED_FAILED"
+
+
 @dataclass(frozen=True)
 class PromptVariant:
     variant_id: str

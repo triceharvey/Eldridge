@@ -97,6 +97,9 @@ class Capability(StrEnum):
     EXECUTE_EVALUATION = "EXECUTE_EVALUATION"
     VALIDATE_EVALUATION = "VALIDATE_EVALUATION"
     RECONCILE_EVALUATION = "RECONCILE_EVALUATION"
+    PLAN_EVALUATION_REPAIR = "PLAN_EVALUATION_REPAIR"
+    RECOVER_EVALUATION = "RECOVER_EVALUATION"
+    PROMOTE_EVALUATION = "PROMOTE_EVALUATION"
 
 
 class ApprovalAction(StrEnum):
@@ -217,6 +220,9 @@ ROLE_CAPABILITIES: dict[AgentRole, frozenset[Capability]] = {
             Capability.EXECUTE_EVALUATION,
             Capability.VALIDATE_EVALUATION,
             Capability.RECONCILE_EVALUATION,
+            Capability.PLAN_EVALUATION_REPAIR,
+            Capability.RECOVER_EVALUATION,
+            Capability.PROMOTE_EVALUATION,
         }
     ),
     AgentRole.AUDITOR: frozenset(

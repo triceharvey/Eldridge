@@ -15,7 +15,11 @@ from control_plane.domain import (
     ProviderResult,
     TaskKind,
 )
-from control_plane.evaluation import EvaluationReconciliationDecision, PromptVariant
+from control_plane.evaluation import (
+    EvaluationReconciliationDecision,
+    EvaluationRecoveryDecision,
+    PromptVariant,
+)
 from control_plane.evaluation_validation import (
     EvaluationArtifact,
     EvaluationValidator,
@@ -24,9 +28,13 @@ from control_plane.evaluation_validation import (
 )
 from control_plane.persistence import (
     EvaluationAssessmentRecord,
+    EvaluationCheckRecord,
     EvaluationObservationRecord,
+    EvaluationPromotionRecord,
     EvaluationProviderRunRecord,
     EvaluationReconciliationRecord,
+    EvaluationRecoveryRecord,
+    EvaluationRepairRecord,
     EvaluationReviewRunRecord,
     Workflow,
 )
@@ -223,6 +231,221 @@ def test_failed_trusted_check_requires_bounded_refinement(
         candidate["rejection_reasons"] == ["failed_checks:schema"]
         for candidate in stored["batches"][0]["candidates"]
     )
+
+
+def test_refinement_requires_exact_committed_repair_plan(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = ControlPlaneService(
+        session_factory,
+        evaluation_validators=(FixedValidator("schema", passed=False),),
+    )
+    workflow, campaign, execution = _setup(
+        service,
+        key="bounded-repair",
+        required_checks=frozenset({"schema"}),
+    )
+    service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="bounded-repair-assessment",
+    )
+    variants = (PromptVariant("repair-v1", "Correct the failed schema evidence."),)
+    with pytest.raises(ConflictError, match="committed repair plan"):
+        service.execute_evaluation_campaign(
+            workflow_id=str(workflow["id"]),
+            campaign_id=str(campaign["id"]),
+            task_id=str(execution["task_id"]),
+            actor_id="dev-operator",
+            idempotency_key="repair-missing-plan-execution",
+            prompt_variants=variants,
+        )
+    repair = service.plan_evaluation_repair(
+        workflow_id=str(workflow["id"]),
+        campaign_id=str(campaign["id"]),
+        actor_id="dev-operator",
+        idempotency_key="bounded-repair-plan",
+        prompt_variants=variants,
+        rationale="Bind the correction to the exact failed evidence and snapshot.",
+    )
+    with pytest.raises(ConflictError, match="do not match"):
+        service.execute_evaluation_campaign(
+            workflow_id=str(workflow["id"]),
+            campaign_id=str(campaign["id"]),
+            task_id=str(execution["task_id"]),
+            actor_id="dev-operator",
+            idempotency_key="repair-drifted-plan-execution",
+            prompt_variants=(PromptVariant("repair-v2", "Use an unapproved correction."),),
+            repair_id=str(repair["id"]),
+        )
+    repaired_execution = service.execute_evaluation_campaign(
+        workflow_id=str(workflow["id"]),
+        campaign_id=str(campaign["id"]),
+        task_id=str(execution["task_id"]),
+        actor_id="dev-operator",
+        idempotency_key="repair-exact-plan-execution",
+        prompt_variants=variants,
+        repair_id=str(repair["id"]),
+    )
+    assert repaired_execution["iteration"] == 2
+    assert repaired_execution["repair_id"] == repair["id"]
+    assert repair["failure_snapshot"]
+    with service.session_factory() as session:
+        assert len(session.scalars(select(EvaluationRepairRecord)).all()) == 1
+
+
+def test_human_promotion_binds_exact_validated_winner_without_extra_authority(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = ControlPlaneService(session_factory)
+    workflow, campaign, execution = _setup(service, key="winner-promotion")
+    assessment = service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="winner-promotion-assessment",
+    )
+    rationale = "Promote only the exact controller-validated winner artifact."
+    with pytest.raises(AuthorizationError):
+        service.promote_evaluation_winner(
+            workflow_id=str(workflow["id"]),
+            assessment_id=str(assessment["id"]),
+            actor_id="architect-agent",
+            idempotency_key="agent-winner-promotion",
+            rationale=rationale,
+        )
+    with TestClient(create_app(service)) as client:
+        response = client.post(
+            f"/workflows/{workflow['id']}/evaluation-assessments/{assessment['id']}/promotions",
+            headers={"X-Principal-ID": "dev-operator"},
+            json={"idempotency_key": "winner-promotion-record", "rationale": rationale},
+        )
+    assert response.status_code == 201
+    promotion = response.json()
+    assert promotion["campaign_id"] == campaign["id"]
+    assert promotion["candidate_id"] == assessment["decision"]["winner_candidate_id"]
+    assert promotion["artifact_digest"].startswith("sha256:")
+    replay = service.promote_evaluation_winner(
+        workflow_id=str(workflow["id"]),
+        assessment_id=str(assessment["id"]),
+        actor_id="dev-operator",
+        idempotency_key="winner-promotion-record",
+        rationale=rationale,
+    )
+    assert replay["replayed"] is True
+    with service.session_factory() as session:
+        assert len(session.scalars(select(EvaluationPromotionRecord)).all()) == 1
+
+
+def test_interrupted_running_reviews_recover_to_unknown_without_retry(
+    session_factory: sessionmaker[Session],
+) -> None:
+    class UnknownReviewProvider(MockProvider):
+        def submit(self, request: ProviderRequest) -> ProviderResult:
+            if request.task_kind is TaskKind.CODE_REVIEW:
+                raise TimeoutError("ambiguous review")
+            return super().submit(request)
+
+    service = ControlPlaneService(
+        session_factory,
+        provider_bindings=tuple(
+            ProviderBinding(profile, UnknownReviewProvider()) for profile in _independent_profiles()
+        ),
+        evidence_store=StaticEvidenceStore(),  # type: ignore[arg-type]
+    )
+    workflow, _campaign, execution = _setup(
+        service, key="interrupted-review-recovery", risk=RiskLevel.HIGH
+    )
+    assessment = service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="interrupted-review-assessment",
+    )
+    with service.session_factory() as session, session.begin():
+        stored = session.get(EvaluationAssessmentRecord, str(assessment["id"]))
+        assert stored is not None
+        stored.status = "REVIEWS_RUNNING"
+        for review in session.scalars(select(EvaluationReviewRunRecord)).all():
+            review.status = "REVIEWS_RUNNING"
+            review.error_code = None
+    recovered = service.recover_evaluation_assessment(
+        workflow_id=str(workflow["id"]),
+        assessment_id=str(assessment["id"]),
+        actor_id="dev-operator",
+        idempotency_key="interrupted-review-recovery",
+        decision=EvaluationRecoveryDecision.MARK_INTERRUPTED_FAILED,
+        rationale="The process stopped after dispatch, so preserve ambiguity for reconciliation.",
+    )
+    assert recovered["status"] == "REVIEW_UNKNOWN"
+    assert recovered["recovery"]["prior_status"] == "REVIEWS_RUNNING"
+    assert recovered["recovery"]["outcome_status"] == "REVIEW_UNKNOWN"
+    with service.session_factory() as session:
+        assert len(session.scalars(select(EvaluationRecoveryRecord)).all()) == 1
+        assert all(
+            review.status == "UNKNOWN" and review.error_code == "InterruptedReviewOutcomeUnknown"
+            for review in session.scalars(select(EvaluationReviewRunRecord)).all()
+        )
+
+
+def test_recovery_replay_resumes_after_commit_before_continuation(
+    session_factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = ControlPlaneService(session_factory)
+    workflow, _campaign, execution = _setup(service, key="recovery-resume")
+    original_continue = service._review_or_submit_trusted_assessment
+
+    def interrupt_continuation(_assessment_id: str, _actor_id: str) -> dict[str, object]:
+        raise RuntimeError("simulated process stop after committed state")
+
+    monkeypatch.setattr(service, "_review_or_submit_trusted_assessment", interrupt_continuation)
+    with pytest.raises(RuntimeError, match="simulated process stop"):
+        service.validate_evaluation_execution(
+            workflow_id=str(workflow["id"]),
+            execution_id=str(execution["id"]),
+            actor_id="dev-operator",
+            idempotency_key="recovery-resume-assessment",
+        )
+    with service.session_factory() as session, session.begin():
+        assessment = session.scalar(
+            select(EvaluationAssessmentRecord).where(
+                EvaluationAssessmentRecord.execution_id == str(execution["id"])
+            )
+        )
+        assert assessment is not None
+        assessment.status = "RUNNING"
+        for check in session.scalars(
+            select(EvaluationCheckRecord).where(
+                EvaluationCheckRecord.assessment_id == assessment.id
+            )
+        ).all():
+            check.status = "RUNNING"
+            check.passed = None
+            check.evidence_digest = None
+            check.completed_at = None
+        assessment_id = assessment.id
+    with pytest.raises(RuntimeError, match="simulated process stop"):
+        service.recover_evaluation_assessment(
+            workflow_id=str(workflow["id"]),
+            assessment_id=assessment_id,
+            actor_id="dev-operator",
+            idempotency_key="recovery-resume-command",
+            decision=EvaluationRecoveryDecision.MARK_INTERRUPTED_FAILED,
+            rationale="Conservatively close interrupted controller checks.",
+        )
+    monkeypatch.setattr(service, "_review_or_submit_trusted_assessment", original_continue)
+    replay = service.recover_evaluation_assessment(
+        workflow_id=str(workflow["id"]),
+        assessment_id=assessment_id,
+        actor_id="dev-operator",
+        idempotency_key="recovery-resume-command",
+        decision=EvaluationRecoveryDecision.MARK_INTERRUPTED_FAILED,
+        rationale="Conservatively close interrupted controller checks.",
+    )
+    assert replay["replayed"] is True
+    assert replay["status"] == "DECIDED"
+    assert replay["decision"]["status"] == "REFINEMENT_REQUIRED"
 
 
 def test_missing_validator_stale_snapshot_and_unknown_execution_fail_closed(

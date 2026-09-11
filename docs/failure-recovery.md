@@ -57,6 +57,12 @@ commits intent before a fresh operation-bound credential is requested, restores 
 snapshot, and enters `ROLLED_BACK` only after an independent exact read. A rejection or ambiguous
 rollback leaves the workflow in `ROLLBACK_REQUIRED`.
 
+Phase 5.2F adds explicit assessment recovery. Incomplete controller-owned checks are recorded as
+failed evidence, committed review intents that were not dispatched are recorded failed, and reviews
+interrupted after dispatch become `UNKNOWN`. The latter still require the separate human mark-failed
+reconciliation. Recovery never converts missing evidence to success and never blindly repeats a
+possibly completed provider request.
+
 ## Recovery exercises
 
 Before a capability is considered production-ready, test worker termination during each external step, duplicate callbacks, provider timeouts, database restart, expired leases, stale approvals, merge conflicts, cancellation, and failed post-deploy verification. Document recovery time and any operator-only step.
