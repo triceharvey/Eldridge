@@ -30,9 +30,11 @@ reconciliation, deterministic validation, independent review, and assessment sub
 composed `EvaluationPipelineService`. Phase 5.3C moves campaign policy and decisions into
 `EvaluationCampaignService` and centralizes evaluation response construction in shared read-model
 functions. The evaluation domain no longer depends on the façade, whose contract remains stable.
-Workflow, Git, deployment, and integration responsibilities still require tested domain boundaries
-before production. These are internal modular-monolith refactors, not justification for network
-services or new infrastructure.
+Phase 5.3D moves workflow intake, task leasing and execution, retry and reconciliation, and human
+decisions into a composed `WorkflowTaskService`. Shared compatibility helpers remain in the façade
+for Windsurf, Git/PR, and deployment callers. Git/PR, deployment/recovery, and integration
+responsibilities still require tested domain boundaries before production. These are internal
+modular-monolith refactors, not justification for network services or new infrastructure.
 
 ## Component model
 
