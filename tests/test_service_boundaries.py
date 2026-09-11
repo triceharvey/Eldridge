@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+from control_plane.domain import (
+    ApprovalAction,
+    ApprovalDecision,
+    DispositionDecision,
+    ReconciliationDecision,
+)
 from control_plane.evaluation import (
     EvaluationReconciliationDecision,
     EvaluationRecoveryDecision,
     PromptVariant,
 )
-from control_plane.routing import WorkCapability
+from control_plane.routing import DataClassification, RiskLevel, WorkCapability
 from control_plane.service import ControlPlaneService
+from control_plane.task_strategy import ComplexityTier, InspectionSignal
 
 
 def test_evaluation_lifecycle_commands_delegate_without_changing_the_facade(
@@ -228,3 +235,115 @@ def test_evaluation_campaign_commands_delegate_without_changing_the_facade(
     campaigns.list_evaluation_campaigns.assert_called_once_with(
         "workflow-1", principal_id="operator-1"
     )
+
+
+def test_workflow_task_commands_delegate_without_changing_the_facade(
+    service: ControlPlaneService,
+) -> None:
+    workflows = Mock()
+    workflows.create_workflow.return_value = {"command": "create"}
+    workflows.get_workflow.return_value = {"query": "workflow"}
+    workflows.lease_next_task.return_value = {"command": "lease"}
+    workflows.reclaim_expired_tasks.return_value = 2
+    workflows.execute_leased_task.return_value = {"command": "execute"}
+    workflows.disposition_workflow.return_value = {"command": "disposition"}
+    workflows.reconcile_execution.return_value = {"command": "reconcile"}
+    workflows.approve.return_value = {"command": "approve"}
+    workflows.cancel_workflow.return_value = {"command": "cancel"}
+    service.workflow_tasks = workflows
+
+    signals = frozenset({InspectionSignal.CONCEALED_INSTRUCTIONS})
+    lease_reference = "lease-1"
+    assert service.create_workflow(
+        requester_id="requester-1",
+        title="Bounded change",
+        description="Exercise the workflow boundary.",
+        idempotency_key="workflow-key",
+        complexity=ComplexityTier.COMPLEX,
+        risk=RiskLevel.HIGH,
+        data_classification=DataClassification.RESTRICTED,
+        repository_scope="repo-1",
+        inspection_signals=signals,
+    ) == {"command": "create"}
+    assert service.get_workflow("workflow-1", principal_id="operator-1") == {"query": "workflow"}
+    assert service.lease_next_task(worker_id="worker-1") == {"command": "lease"}
+    assert service.reclaim_expired_tasks(worker_id="worker-1") == 2
+    assert service.execute_leased_task(
+        task_id="task-1", lease_token=lease_reference, worker_id="worker-1"
+    ) == {"command": "execute"}
+    service.heartbeat_task(task_id="task-1", lease_token=lease_reference, worker_id="worker-1")
+    assert service.disposition_workflow(
+        workflow_id="workflow-1",
+        actor_id="operator-1",
+        decision=DispositionDecision.RESUME_CONTAINED,
+        rationale="Proceed with containment.",
+    ) == {"command": "disposition"}
+    assert service.reconcile_execution(
+        workflow_id="workflow-1",
+        task_id="task-1",
+        actor_id="operator-1",
+        decision=ReconciliationDecision.RETRY,
+        rationale="Retry after conservative reconciliation.",
+    ) == {"command": "reconcile"}
+    assert service.approve(
+        workflow_id="workflow-1",
+        approver_id="operator-1",
+        action=ApprovalAction.DEPLOY,
+        target="environment-1",
+        revision="revision-1",
+        decision=ApprovalDecision.APPROVED,
+        rationale="Approve the immutable plan.",
+        expires_in_minutes=10,
+        environment_id="environment-1",
+        plan_digest="plan-digest",
+        deployment_attempt_id=None,
+    ) == {"command": "approve"}
+    assert service.cancel_workflow("workflow-1", principal_id="operator-1") == {"command": "cancel"}
+
+    workflows.create_workflow.assert_called_once_with(
+        requester_id="requester-1",
+        title="Bounded change",
+        description="Exercise the workflow boundary.",
+        idempotency_key="workflow-key",
+        complexity=ComplexityTier.COMPLEX,
+        risk=RiskLevel.HIGH,
+        data_classification=DataClassification.RESTRICTED,
+        repository_scope="repo-1",
+        inspection_signals=signals,
+    )
+    workflows.get_workflow.assert_called_once_with("workflow-1", principal_id="operator-1")
+    workflows.lease_next_task.assert_called_once_with(worker_id="worker-1")
+    workflows.reclaim_expired_tasks.assert_called_once_with(worker_id="worker-1")
+    workflows.execute_leased_task.assert_called_once_with(
+        task_id="task-1", lease_token=lease_reference, worker_id="worker-1"
+    )
+    workflows.heartbeat_task.assert_called_once_with(
+        task_id="task-1", lease_token=lease_reference, worker_id="worker-1"
+    )
+    workflows.disposition_workflow.assert_called_once_with(
+        workflow_id="workflow-1",
+        actor_id="operator-1",
+        decision=DispositionDecision.RESUME_CONTAINED,
+        rationale="Proceed with containment.",
+    )
+    workflows.reconcile_execution.assert_called_once_with(
+        workflow_id="workflow-1",
+        task_id="task-1",
+        actor_id="operator-1",
+        decision=ReconciliationDecision.RETRY,
+        rationale="Retry after conservative reconciliation.",
+    )
+    workflows.approve.assert_called_once_with(
+        workflow_id="workflow-1",
+        approver_id="operator-1",
+        action=ApprovalAction.DEPLOY,
+        target="environment-1",
+        revision="revision-1",
+        decision=ApprovalDecision.APPROVED,
+        rationale="Approve the immutable plan.",
+        expires_in_minutes=10,
+        environment_id="environment-1",
+        plan_digest="plan-digest",
+        deployment_attempt_id=None,
+    )
+    workflows.cancel_workflow.assert_called_once_with("workflow-1", principal_id="operator-1")

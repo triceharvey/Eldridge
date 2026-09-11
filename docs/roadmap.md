@@ -102,11 +102,14 @@ evaluation repair, recovery, and promotion behind a tested `EvaluationLifecycleS
 extracted committed provider fan-out, ambiguity reconciliation, trusted validation, independent
 review, and assessment submission behind a tested `EvaluationPipelineService`. Both preserve the
 public façade and add no infrastructure. Phase 5.3C completed the evaluation-domain decomposition by
-extracting campaign policy and decisions and centralizing shared read models. Workflow/task, Git/PR,
-deployment/recovery, and integration boundaries remain. Eldridge will not proceed into broad Phase 6
-infrastructure before those boundaries are reviewable and one explicitly authorized real engineering
-workflow completes generation, validation, review, protected PR, and human disposition. The USD 0
-default remains in force; paid-provider proof requires a separate budget and egress authorization.
+extracting campaign policy and decisions and centralizing shared read models. Phase 5.3D then
+extracted workflow intake, task leasing and execution, retry and reconciliation, and human decisions
+behind a tested `WorkflowTaskService`; shared compatibility helpers remain until the adjacent domains
+are split. Git/PR, deployment/recovery, and integration boundaries remain. Eldridge will not proceed
+into broad Phase 6 infrastructure before those boundaries are reviewable and one explicitly
+authorized real engineering workflow completes generation, validation, review, protected PR, and
+human disposition. The USD 0 default remains in force; paid-provider proof requires a separate budget
+and egress authorization.
 
 ## Rough completion estimate
 

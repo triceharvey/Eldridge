@@ -26,5 +26,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0022: Extract the evaluation lifecycle boundary](0022-evaluation-lifecycle-boundary.md)
 - [ADR-0023: Extract the evaluation execution and assessment pipeline](0023-evaluation-pipeline-boundary.md)
 - [ADR-0024: Extract evaluation campaign and read-model boundaries](0024-evaluation-campaign-and-read-model-boundaries.md)
+- [ADR-0025: Extract the workflow and task orchestration boundary](0025-workflow-task-boundary.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.
