@@ -25,6 +25,11 @@ from control_plane.evaluation import (
     EvaluationStatus,
     PromptVariant,
 )
+from control_plane.evaluation_read_models import (
+    evaluation_promotion_dict,
+    evaluation_recovery_dict,
+    evaluation_repair_dict,
+)
 from control_plane.persistence import (
     EvaluationArtifactRecord,
     EvaluationAssessmentRecord,
@@ -56,6 +61,9 @@ class EvaluationLifecycleService:
         self.policy = policy
         self.resume_assessment = resume_assessment
         self.read_assessment = read_assessment
+        self._evaluation_repair_dict = evaluation_repair_dict
+        self._evaluation_recovery_dict = evaluation_recovery_dict
+        self._evaluation_promotion_dict = evaluation_promotion_dict
 
     @staticmethod
     def _get_workflow(session: Session, workflow_id: str, *, lock: bool = False) -> Workflow:
@@ -84,55 +92,6 @@ class EvaluationLifecycleService:
             WorkflowState.ROLLED_BACK,
         }:
             raise ConflictError("evaluation workflow is terminal")
-
-    @staticmethod
-    def _evaluation_repair_dict(record: EvaluationRepairRecord) -> dict[str, Any]:
-        return {
-            "id": record.id,
-            "workflow_id": record.workflow_id,
-            "campaign_id": record.campaign_id,
-            "source_batch_id": record.source_batch_id,
-            "source_iteration": record.source_iteration,
-            "target_iteration": record.target_iteration,
-            "workflow_version": record.workflow_version,
-            "candidate_revision": record.candidate_revision,
-            "prompt_variants": record.prompt_variants,
-            "failure_snapshot": record.failure_snapshot,
-            "rationale": record.rationale,
-            "created_at": record.created_at.isoformat(),
-        }
-
-    @staticmethod
-    def _evaluation_recovery_dict(record: EvaluationRecoveryRecord) -> dict[str, Any]:
-        return {
-            "id": record.id,
-            "workflow_id": record.workflow_id,
-            "campaign_id": record.campaign_id,
-            "assessment_id": record.assessment_id,
-            "prior_status": record.prior_status,
-            "outcome_status": record.outcome_status,
-            "decision": record.decision,
-            "rationale": record.rationale,
-            "affected_record_ids": record.affected_record_ids,
-            "created_at": record.created_at.isoformat(),
-        }
-
-    @staticmethod
-    def _evaluation_promotion_dict(record: EvaluationPromotionRecord) -> dict[str, Any]:
-        return {
-            "id": record.id,
-            "workflow_id": record.workflow_id,
-            "campaign_id": record.campaign_id,
-            "assessment_id": record.assessment_id,
-            "batch_id": record.batch_id,
-            "candidate_id": record.candidate_id,
-            "artifact_id": record.artifact_id,
-            "artifact_digest": record.artifact_digest,
-            "workflow_version": record.workflow_version,
-            "candidate_revision": record.candidate_revision,
-            "rationale": record.rationale,
-            "created_at": record.created_at.isoformat(),
-        }
 
     def plan_evaluation_repair(
         self,
