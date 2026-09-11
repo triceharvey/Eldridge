@@ -7,6 +7,7 @@ from control_plane.evaluation import (
     EvaluationRecoveryDecision,
     PromptVariant,
 )
+from control_plane.routing import WorkCapability
 from control_plane.service import ControlPlaneService
 
 
@@ -159,4 +160,71 @@ def test_evaluation_pipeline_commands_delegate_without_changing_the_facade(
         idempotency_key="reconcile-review-key",
         decision=EvaluationReconciliationDecision.MARK_FAILED,
         rationale="Resolve an ambiguous reviewer outcome conservatively.",
+    )
+
+
+def test_evaluation_campaign_commands_delegate_without_changing_the_facade(
+    service: ControlPlaneService,
+) -> None:
+    campaigns = Mock()
+    campaigns.create_evaluation_campaign.return_value = {"command": "create"}
+    campaigns.submit_evaluation_evidence.return_value = {"command": "decide"}
+    campaigns.get_evaluation_campaign.return_value = {"query": "campaign"}
+    campaigns.list_evaluation_campaigns.return_value = [{"query": "campaign"}]
+    service.evaluation_campaigns = campaigns
+
+    assert service.create_evaluation_campaign(
+        workflow_id="workflow-1",
+        actor_id="operator-1",
+        idempotency_key="campaign-key",
+        prompt_contract_version="prompt-v1",
+        work_capability=WorkCapability.PLANNING,
+        required_checks=frozenset({"schema", "security"}),
+        max_candidates=3,
+        max_prompt_variants=2,
+        max_iterations=2,
+        max_total_cost_microunits=0,
+        minimum_independent_reviews=1,
+    ) == {"command": "create"}
+    assert service.submit_evaluation_evidence(
+        workflow_id="workflow-1",
+        campaign_id="campaign-1",
+        actor_id="operator-1",
+        idempotency_key="decision-key",
+        candidates=(),
+        repair_id="repair-1",
+    ) == {"command": "decide"}
+    assert service.get_evaluation_campaign(
+        "workflow-1", "campaign-1", principal_id="operator-1"
+    ) == {"query": "campaign"}
+    assert service.list_evaluation_campaigns("workflow-1", principal_id="operator-1") == [
+        {"query": "campaign"}
+    ]
+
+    campaigns.create_evaluation_campaign.assert_called_once_with(
+        workflow_id="workflow-1",
+        actor_id="operator-1",
+        idempotency_key="campaign-key",
+        prompt_contract_version="prompt-v1",
+        work_capability=WorkCapability.PLANNING,
+        required_checks=frozenset({"schema", "security"}),
+        max_candidates=3,
+        max_prompt_variants=2,
+        max_iterations=2,
+        max_total_cost_microunits=0,
+        minimum_independent_reviews=1,
+    )
+    campaigns.submit_evaluation_evidence.assert_called_once_with(
+        workflow_id="workflow-1",
+        campaign_id="campaign-1",
+        actor_id="operator-1",
+        idempotency_key="decision-key",
+        candidates=(),
+        repair_id="repair-1",
+    )
+    campaigns.get_evaluation_campaign.assert_called_once_with(
+        "workflow-1", "campaign-1", principal_id="operator-1"
+    )
+    campaigns.list_evaluation_campaigns.assert_called_once_with(
+        "workflow-1", principal_id="operator-1"
     )

@@ -101,12 +101,12 @@ evidence is ahead of a real model-driven vertical slice. Phase 5.3A extracted hu
 evaluation repair, recovery, and promotion behind a tested `EvaluationLifecycleService`. Phase 5.3B
 extracted committed provider fan-out, ambiguity reconciliation, trusted validation, independent
 review, and assessment submission behind a tested `EvaluationPipelineService`. Both preserve the
-public façade and add no infrastructure. Campaign administration and shared evaluation read models,
-followed by workflow, Git, deployment, and integration boundaries, remain. Eldridge will not
-proceed into broad Phase 6 infrastructure before those boundaries are reviewable and one explicitly
-authorized real engineering workflow completes generation, validation, review, protected PR, and human
-disposition. The USD 0 default remains in force; paid-provider proof requires a separate budget and
-egress authorization.
+public façade and add no infrastructure. Phase 5.3C completed the evaluation-domain decomposition by
+extracting campaign policy and decisions and centralizing shared read models. Workflow/task, Git/PR,
+deployment/recovery, and integration boundaries remain. Eldridge will not proceed into broad Phase 6
+infrastructure before those boundaries are reviewable and one explicitly authorized real engineering
+workflow completes generation, validation, review, protected PR, and human disposition. The USD 0
+default remains in force; paid-provider proof requires a separate budget and egress authorization.
 
 ## Rough completion estimate
 

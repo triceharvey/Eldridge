@@ -34,6 +34,11 @@ from control_plane.evaluation import (
     IndependentReview,
     PromptVariant,
 )
+from control_plane.evaluation_read_models import (
+    evaluation_assessment_dict,
+    evaluation_execution_dict,
+    evaluation_reconciliation_dict,
+)
 from control_plane.evaluation_validation import (
     EvaluationArtifact as TrustedEvaluationArtifact,
 )
@@ -132,9 +137,6 @@ class EvaluationPipelineService:
         provider_policy_version: str,
         routing_objective: RoutingObjective,
         evaluation_validators: Mapping[str, EvaluationValidator],
-        serialize_execution: Callable[[Session, EvaluationExecutionRecord], dict[str, Any]],
-        serialize_assessment: Callable[[Session, EvaluationAssessmentRecord], dict[str, Any]],
-        serialize_reconciliation: Callable[[EvaluationReconciliationRecord], dict[str, Any]],
         submit_evaluation_evidence: Callable[..., dict[str, Any]],
         resume_assessment: Callable[[str, str], dict[str, Any]],
     ) -> None:
@@ -148,9 +150,9 @@ class EvaluationPipelineService:
         self.provider_policy_version = provider_policy_version
         self.routing_objective = routing_objective
         self.evaluation_validators = evaluation_validators
-        self._evaluation_execution_dict = serialize_execution
-        self._evaluation_assessment_dict = serialize_assessment
-        self._evaluation_reconciliation_dict = serialize_reconciliation
+        self._evaluation_execution_dict = evaluation_execution_dict
+        self._evaluation_assessment_dict = evaluation_assessment_dict
+        self._evaluation_reconciliation_dict = evaluation_reconciliation_dict
         self.submit_evaluation_evidence = submit_evaluation_evidence
         self.resume_assessment = resume_assessment
 

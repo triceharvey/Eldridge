@@ -27,8 +27,10 @@ evaluation, Git, deployment, and recovery orchestration. Phase 5.3A moved human-
 evaluation repair, interrupted-assessment recovery, and winner promotion into a composed
 `EvaluationLifecycleService`. Phase 5.3B moves committed provider execution, ambiguity
 reconciliation, deterministic validation, independent review, and assessment submission into a
-composed `EvaluationPipelineService`. The façade contract remains stable, and the remaining campaign,
-workflow, Git, deployment, and integration responsibilities still require tested domain boundaries
+composed `EvaluationPipelineService`. Phase 5.3C moves campaign policy and decisions into
+`EvaluationCampaignService` and centralizes evaluation response construction in shared read-model
+functions. The evaluation domain no longer depends on the façade, whose contract remains stable.
+Workflow, Git, deployment, and integration responsibilities still require tested domain boundaries
 before production. These are internal modular-monolith refactors, not justification for network
 services or new infrastructure.
 
