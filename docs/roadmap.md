@@ -97,10 +97,12 @@ complete; its real-provider vertical-slice evidence remains opt-in and separate.
 
 An external static review on 2026-09-10 correctly identified two pre-production risks: the central
 `ControlPlaneService` has accumulated too many domain responsibilities, and code/documentation
-evidence is ahead of a real model-driven vertical slice. Eldridge will not proceed into broad Phase 6
-infrastructure after Phase 5.2. Before that expansion, it must (1) extract workflow, evaluation,
-deployment, and integration orchestration behind tested domain boundaries and (2) run one explicitly
-authorized real engineering workflow through generation, validation, review, protected PR, and human
+evidence is ahead of a real model-driven vertical slice. Phase 5.3A has started the first corrective
+track by extracting human-controlled evaluation repair, recovery, and promotion behind a tested
+`EvaluationLifecycleService` without changing the public façade. Broader evaluation execution and
+assessment, workflow, deployment, and integration boundaries remain. Eldridge will not proceed into
+broad Phase 6 infrastructure before those boundaries are reviewable and one explicitly authorized
+real engineering workflow completes generation, validation, review, protected PR, and human
 disposition. The USD 0 default remains in force; paid-provider proof requires a separate budget and
 egress authorization.
 
