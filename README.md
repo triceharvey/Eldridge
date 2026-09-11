@@ -7,6 +7,12 @@
 the USD 0 local target. The control plane is not yet a hosted service, and all commercial
 providers and privileged integrations remain disabled by default.
 
+**Evidence scope:** “Verified” in this repository always means the scope named by the associated
+acceptance record: deterministic tests, PostgreSQL integration, a local k3d exercise, or an explicitly
+identified live integration. It does not imply hosted-production validation. Eldridge is intentionally
+AI-assisted and dogfoods agent-generated implementation and documentation, while human decisions,
+protected pull requests, independent CI, and explicit evidence boundaries remain the authority.
+
 This repository defines a production-minded control plane for coordinating specialized AI engineering agents under explicit policy, isolation, audit, and human approval. The system is not a group chat for models. It is a workflow engine in which agents are treated as untrusted, non-human service identities and deterministic controls outrank model recommendations.
 
 The repository has completed **Phase 0** and the **Phase 1 deterministic control-plane skeleton** approved on 2026-09-06. Phase 2 engineering controls are complete locally except for explicitly approved paid-provider canaries. Phase 3 engineering is locally complete: revision-bound GitHub CI evidence, draft PR proposals, independent merge-readiness assessment, OIDC-backed production identity, read-only post-merge confirmation, durable Prometheus metrics, an authenticated dashboard, and TLS-ready container packaging. Phase 4 engineering is complete for the approved USD 0 local target: immutable plans, exact expiring deployment and rollback approvals, short-lived operation-bound workload identity, bounded deployment, verification, containment, and controlled recovery are implemented and exercised. Environment-specific hosted activation evidence remains pending. The system cannot execute a merge, perform a production deployment, access production secrets, or contact an external model provider by default.
@@ -227,6 +233,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 5.2 multi-model evaluation core acceptance](docs/phase-5-2-acceptance.md)
 - [Phase 5.2B durable evaluation campaign acceptance](docs/phase-5-2b-acceptance.md)
 - [Phase 5.2C committed provider fan-out acceptance](docs/phase-5-2c-acceptance.md)
+- [Phase 5.2D trusted artifact validation acceptance](docs/phase-5-2d-acceptance.md)
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)

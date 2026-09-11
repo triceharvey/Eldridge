@@ -255,6 +255,12 @@ class EvaluationExecutionCreate(BaseModel):
     prompt_variants: tuple[PromptVariantCreate, ...] = Field(min_length=1, max_length=8)
 
 
+class EvaluationAssessmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
 def create_app(
     service: ControlPlaneService | None = None,
     *,
@@ -653,6 +659,35 @@ def create_app(
     ) -> dict[str, Any]:
         return service.get_evaluation_execution(
             workflow_id, execution_id, principal_id=principal_id
+        )
+
+    @app.post(
+        "/workflows/{workflow_id}/evaluation-executions/{execution_id}/assessments",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def validate_evaluation_execution(
+        workflow_id: str,
+        execution_id: str,
+        request: EvaluationAssessmentCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.validate_evaluation_execution(
+            workflow_id=workflow_id,
+            execution_id=execution_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+        )
+
+    @app.get("/workflows/{workflow_id}/evaluation-assessments/{assessment_id}")
+    def get_evaluation_assessment(
+        workflow_id: str,
+        assessment_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.get_evaluation_assessment(
+            workflow_id, assessment_id, principal_id=principal_id
         )
 
     @app.get("/ci-checks")

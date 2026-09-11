@@ -40,7 +40,7 @@ Exit criteria: evidence is bound to a commit digest, stale approval is rejected 
 
 Implemented: disabled-by-default GitHub `check_run` webhook ingestion with HMAC-SHA256 verification, a least-authority CI integration identity, bounded payload validation, exact repository/revision matching, durable delivery idempotency, normalized success and failure evidence, payload digests, audit events, and no webhook-driven state transition. A separately disabled GitHub App client uses RS256 app identity and repository-scoped installation tokens to verify a remote branch head, create draft pull requests, and independently assess exact-revision checks and branch protection against operator policy. It requests no contents-write or merge authority. Durable human-authorized workflow commands persist PR intent before external execution, prevent idempotency-key drift, contain ambiguous outcomes as `UNKNOWN`, reconcile through a read-only remote search, and record revision-bound readiness snapshots. Production commands require allowlisted, signed OIDC identity. After a human merges in GitHub, the control plane independently confirms the exact PR, head revision, and merge commit through read-only GitHub calls before entering `MERGED`. Durable low-cardinality Prometheus metrics, an authenticated aggregate dashboard, separate non-root API and worker images, one-shot migrations, internal service networking, and Caddy automatic-TLS ingress are packaged with fail-closed operator inputs.
 
-Current rough status: Phase 0 and Phase 1 are complete; Phase 2 is about 95% complete pending operator-approved live-provider evidence. Phase 3 engineering is locally complete, and its least-authority GitHub App has been installed and exercised against a revision-bound draft PR. Protected-branch enforcement and the complete human-approved protected-merge path have also been exercised on the public Eldridge repository. Final hosted operational sign-off still requires environment-specific proof that cannot be fabricated in source code: immutable published image digests and scans, public DNS/TLS, a real OIDC tenant mapping, hosted PostgreSQL, webhook delivery, metrics scrape, and backup/restore. Phase 4 engineering is complete and validated for the approved USD 0 local target, including controlled recovery. Phase 5.2 now includes its deterministic decision core, durable campaign/API layer, and committed zero-cost local provider fan-out; trusted-validator ingestion, explicit `UNKNOWN` reconciliation, revision-bound artifact promotion, and bounded repair remain evidence-gated. As a planning range rather than a release claim, Eldridge is roughly 96-98% complete as a local portfolio-grade control plane and 79-84% complete against the broader hosted production target.
+Current rough status: Phase 0 and Phase 1 are complete; Phase 2 is about 95% complete pending operator-approved live-provider evidence. Phase 3 engineering is locally complete, and its least-authority GitHub App has been installed and exercised against a revision-bound draft PR. Protected-branch enforcement and the complete human-approved protected-merge path have also been exercised on the public Eldridge repository. Final hosted operational sign-off still requires environment-specific proof that cannot be fabricated in source code: immutable published image digests and scans, public DNS/TLS, a real OIDC tenant mapping, hosted PostgreSQL, webhook delivery, metrics scrape, and backup/restore. Phase 4 engineering is complete and validated for the approved USD 0 local target, including controlled recovery. Phase 5.2 now includes its deterministic decision core, durable campaign/API layer, committed zero-cost local provider fan-out, and trusted artifact/check bridge; independent-review execution, explicit `UNKNOWN` reconciliation, controlled promotion, and bounded repair remain evidence-gated. As a planning range rather than a release claim, Eldridge is roughly 97-98.5% complete as a local portfolio-grade control plane and 80-85% complete against the broader hosted production target.
 
 ## Phase 4 — Controlled deployment path
 
@@ -86,9 +86,19 @@ and iteration state; human-authorized replay-safe API commands; exact provider/r
 and server-owned eligibility scores. The third slice persists exact execution intent, commits the
 provider/variant matrix before contact, runs bounded zero-cost local fan-out outside database
 transactions, validates and hashes outputs, and contains ambiguous outcomes without blind retry.
-The next slice must connect revision-bound output artifacts to trusted deterministic validators and
-independent review, define explicit `UNKNOWN` reconciliation, schedule bounded repair, and promote a
-validated winner only through normal workflow and human gates.
+The fourth slice creates snapshot-bound artifacts, runs versioned controller-owned checks, binds
+every check to the exact output digest, and feeds the evidence into the campaign core. The next slice
+is durable independent review plus `UNKNOWN` reconciliation; controlled repair and human promotion
+follow.
+
+An external static review on 2026-09-10 correctly identified two pre-production risks: the central
+`ControlPlaneService` has accumulated too many domain responsibilities, and code/documentation
+evidence is ahead of a real model-driven vertical slice. Eldridge will not proceed into broad Phase 6
+infrastructure after Phase 5.2. Before that expansion, it must (1) extract workflow, evaluation,
+deployment, and integration orchestration behind tested domain boundaries and (2) run one explicitly
+authorized real engineering workflow through generation, validation, review, protected PR, and human
+disposition. The USD 0 default remains in force; paid-provider proof requires a separate budget and
+egress authorization.
 
 ## Rough completion estimate
 

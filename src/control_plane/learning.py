@@ -6,7 +6,7 @@ from math import ceil
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from control_plane.persistence import ProviderObservation
+from control_plane.persistence import EvaluationObservationRecord, ProviderObservation
 from control_plane.routing import CapabilityEvidence, ProviderProfile, WorkCapability
 
 
@@ -36,7 +36,7 @@ class ProviderEvidenceStore:
         profile: ProviderProfile,
         capability: WorkCapability,
     ) -> CapabilityEvidence:
-        observations = session.scalars(
+        task_observations = session.scalars(
             select(ProviderObservation)
             .where(
                 ProviderObservation.provider_id == profile.provider_id,
@@ -47,14 +47,36 @@ class ProviderEvidenceStore:
             .order_by(ProviderObservation.created_at.desc())
             .limit(self.window_size)
         ).all()
+        evaluation_observations = session.scalars(
+            select(EvaluationObservationRecord)
+            .where(
+                EvaluationObservationRecord.provider_id == profile.provider_id,
+                EvaluationObservationRecord.model_version == profile.model_version,
+                EvaluationObservationRecord.profile_version == profile.profile_version,
+                EvaluationObservationRecord.work_capability == capability.value,
+            )
+            .order_by(EvaluationObservationRecord.created_at.desc())
+            .limit(self.window_size)
+        ).all()
+        observations = [
+            (item.created_at, item.latency_ms, item.succeeded, item.validation_passed)
+            for item in task_observations
+        ]
+        observations.extend(
+            (item.created_at, item.latency_ms, item.succeeded, item.validation_passed)
+            for item in evaluation_observations
+        )
+        observations = sorted(observations, key=lambda item: item[0], reverse=True)[
+            : self.window_size
+        ]
         count = len(observations)
         if count == 0:
             return CapabilityEvidence()
-        latencies = sorted(item.latency_ms / 1000 for item in observations)
+        latencies = sorted(item[1] / 1000 for item in observations)
         p95_index = max(ceil(0.95 * count) - 1, 0)
         return CapabilityEvidence(
             sample_count=count,
-            success_rate=sum(item.succeeded for item in observations) / count,
-            validation_pass_rate=sum(item.validation_passed for item in observations) / count,
+            success_rate=sum(item[2] for item in observations) / count,
+            validation_pass_rate=sum(item[3] for item in observations) / count,
             p95_latency_seconds=latencies[p95_index],
         )

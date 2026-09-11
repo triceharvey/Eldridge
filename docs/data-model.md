@@ -50,6 +50,7 @@ erDiagram
 | `provider_config` | adapter type, capability descriptor, data class, status, secret reference | Policy-visible provider registration without credentials |
 | `routing_record` | task/attempt, policy version, request constraints, ranked candidates, rejection reasons, selected provider/model | Replayable fail-closed provider decision |
 | `provider_observation` | task/attempt, provider/family, model/profile version, capability, success, validation, latency, error | Version-specific evidence for controlled routing improvement |
+| `evaluation_observation` | assessment/provider run/campaign, provider/family, model/profile version, capability, success, validation, selection, latency, error | Replay-safe routing evidence from trusted evaluation decisions |
 | `artifact` | attempt, type, URI/reference, digest, size, media type, classification, revision | Validated output/evidence metadata |
 | `finding` | attempt, category, severity, status, evidence, affected digest, disposition | Review/security issue tracked to closure |
 | `approval` | workflow, action, target, revision/digest, policy, human principal, decision, rationale, expiry, consumed time; immutable | Scoped human authorization; unique active approval rules |
