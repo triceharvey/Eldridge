@@ -15,7 +15,7 @@ from control_plane.domain import (
     ProviderResult,
     TaskKind,
 )
-from control_plane.evaluation import PromptVariant
+from control_plane.evaluation import EvaluationReconciliationDecision, PromptVariant
 from control_plane.evaluation_validation import (
     EvaluationArtifact,
     EvaluationValidator,
@@ -25,11 +25,18 @@ from control_plane.evaluation_validation import (
 from control_plane.persistence import (
     EvaluationAssessmentRecord,
     EvaluationObservationRecord,
+    EvaluationProviderRunRecord,
+    EvaluationReconciliationRecord,
+    EvaluationReviewRunRecord,
     Workflow,
 )
 from control_plane.providers import MockProvider
 from control_plane.routing import (
     CapabilityEvidence,
+    CostTier,
+    DataClassification,
+    EgressBoundary,
+    ExecutionMode,
     ProviderProfile,
     RiskLevel,
     WorkCapability,
@@ -65,6 +72,35 @@ class StaticEvidenceStore:
         self, _session: Session, profiles: tuple[ProviderProfile, ...]
     ) -> tuple[ProviderProfile, ...]:
         return profiles
+
+
+def _independent_profiles() -> tuple[ProviderProfile, ...]:
+    return tuple(
+        ProviderProfile(
+            provider_id=f"review-model-{index}",
+            provider_family=f"review-family-{index}",
+            execution_mode=ExecutionMode.LOCAL_MODEL,
+            capabilities=frozenset(WorkCapability),
+            egress_boundary=EgressBoundary.LOCAL,
+            maximum_data_classification=DataClassification.RESTRICTED,
+            cost_tier=CostTier.LOW,
+            model_version="deterministic-mock-v1",
+            enabled=True,
+            healthy=True,
+            evidence={
+                capability: CapabilityEvidence(
+                    sample_count=20,
+                    success_rate=1.0,
+                    validation_pass_rate=1.0,
+                )
+                for capability in (
+                    WorkCapability.PLANNING,
+                    WorkCapability.CODE_REVIEW,
+                )
+            },
+        )
+        for index in range(3)
+    )
 
 
 def _setup(
@@ -245,9 +281,43 @@ def test_missing_validator_stale_snapshot_and_unknown_execution_fail_closed(
             actor_id="dev-operator",
             idempotency_key="unknown-validation-assessment",
         )
+    with pytest.raises(AuthorizationError):
+        unknown_service.reconcile_evaluation_execution(
+            workflow_id=str(unknown_workflow["id"]),
+            execution_id=str(unknown_execution["id"]),
+            actor_id="implementer-agent",
+            idempotency_key="agent-provider-reconciliation",
+            decision=EvaluationReconciliationDecision.MARK_FAILED,
+            rationale="Agents cannot resolve ambiguous provider effects.",
+        )
+    with TestClient(create_app(unknown_service)) as client:
+        response = client.post(
+            (
+                f"/workflows/{unknown_workflow['id']}/evaluation-executions/"
+                f"{unknown_execution['id']}/reconcile"
+            ),
+            headers={"X-Principal-ID": "dev-operator"},
+            json={
+                "idempotency_key": "unknown-provider-reconciliation",
+                "decision": "MARK_FAILED",
+                "rationale": (
+                    "The provider has no read-only result lookup; fail closed without retry."
+                ),
+            },
+        )
+    assert response.status_code == 200
+    reconciled = response.json()
+    assessment = unknown_service.validate_evaluation_execution(
+        workflow_id=str(unknown_workflow["id"]),
+        execution_id=str(unknown_execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="unknown-validation-assessment",
+    )
+    assert reconciled["status"] == "FAILED"
+    assert assessment["decision"]["status"] == "REFINEMENT_REQUIRED"
 
 
-def test_high_risk_cannot_win_without_independent_reviews(
+def test_high_risk_fails_closed_without_independent_reviewers(
     session_factory: sessionmaker[Session],
 ) -> None:
     qualified_profiles = tuple(
@@ -276,22 +346,200 @@ def test_high_risk_cannot_win_without_independent_reviews(
         risk=RiskLevel.HIGH,
     )
 
+    with pytest.raises(ConflictError, match="insufficient policy-eligible"):
+        service.validate_evaluation_execution(
+            workflow_id=str(workflow["id"]),
+            execution_id=str(execution["id"]),
+            actor_id="dev-operator",
+            idempotency_key="high-risk-review-assessment",
+        )
+    with service.session_factory() as session:
+        observations = session.scalars(select(EvaluationObservationRecord)).all()
+        assert observations == []
+
+
+def test_high_risk_executes_two_durable_cross_family_reviews_per_artifact(
+    session_factory: sessionmaker[Session],
+) -> None:
+    profiles = _independent_profiles()
+    service = ControlPlaneService(
+        session_factory,
+        provider_bindings=tuple(ProviderBinding(profile, MockProvider()) for profile in profiles),
+        evidence_store=StaticEvidenceStore(),  # type: ignore[arg-type]
+    )
+    workflow, _campaign, execution = _setup(
+        service,
+        key="durable-independent-reviews",
+        risk=RiskLevel.HIGH,
+    )
+
     assessment = service.validate_evaluation_execution(
         workflow_id=str(workflow["id"]),
         execution_id=str(execution["id"]),
         actor_id="dev-operator",
-        idempotency_key="high-risk-review-assessment",
+        idempotency_key="durable-independent-review-assessment",
+    )
+
+    assert assessment["status"] == "DECIDED"
+    assert assessment["decision"]["status"] == "WINNER_SELECTED"
+    assert all(len(artifact["reviews"]) == 2 for artifact in assessment["artifacts"])
+    assert all(
+        review["status"] == "SUCCEEDED"
+        and review["passed"] is True
+        and review["reviewed_output_digest"] == artifact["digest"]
+        and review["evidence_digest"].startswith("sha256:")
+        for artifact in assessment["artifacts"]
+        for review in artifact["reviews"]
+    )
+    with service.session_factory() as session:
+        reviews = session.scalars(select(EvaluationReviewRunRecord)).all()
+        producers = {
+            run.id: run for run in session.scalars(select(EvaluationProviderRunRecord)).all()
+        }
+        assert len(reviews) == len(assessment["artifacts"]) * 2
+        assert all(
+            review.reviewer_provider_id != producers[review.candidate_provider_run_id].provider_id
+            and review.reviewer_provider_family
+            != producers[review.candidate_provider_run_id].provider_family
+            for review in reviews
+        )
+
+
+def test_unknown_reviews_require_human_failed_reconciliation(
+    session_factory: sessionmaker[Session],
+) -> None:
+    class UnknownReviewProvider(MockProvider):
+        def submit(self, request: ProviderRequest) -> ProviderResult:
+            if request.task_kind is TaskKind.CODE_REVIEW:
+                raise TimeoutError("ambiguous review")
+            return super().submit(request)
+
+    service = ControlPlaneService(
+        session_factory,
+        provider_bindings=tuple(
+            ProviderBinding(profile, UnknownReviewProvider()) for profile in _independent_profiles()
+        ),
+        evidence_store=StaticEvidenceStore(),  # type: ignore[arg-type]
+    )
+    workflow, _campaign, execution = _setup(
+        service,
+        key="unknown-independent-reviews",
+        risk=RiskLevel.HIGH,
+    )
+    assessment = service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="unknown-review-assessment",
+    )
+
+    assert assessment["status"] == "REVIEW_UNKNOWN"
+    rationale = "No read-only lookup exists, so conservatively treat ambiguous reviews as failed."
+    with TestClient(create_app(service)) as client:
+        response = client.post(
+            (f"/workflows/{workflow['id']}/evaluation-assessments/{assessment['id']}/reconcile"),
+            headers={"X-Principal-ID": "dev-operator"},
+            json={
+                "idempotency_key": "unknown-review-reconciliation",
+                "decision": "MARK_FAILED",
+                "rationale": rationale,
+            },
+        )
+    assert response.status_code == 200
+    reconciled = response.json()
+    replay = service.reconcile_evaluation_reviews(
+        workflow_id=str(workflow["id"]),
+        assessment_id=str(assessment["id"]),
+        actor_id="dev-operator",
+        idempotency_key="unknown-review-reconciliation",
+        decision=EvaluationReconciliationDecision.MARK_FAILED,
+        rationale=rationale,
+    )
+
+    assert reconciled["status"] == "DECIDED"
+    assert reconciled["decision"]["status"] == "REFINEMENT_REQUIRED"
+    assert replay["replayed"] is True
+    with service.session_factory() as session:
+        assert len(session.scalars(select(EvaluationReconciliationRecord)).all()) == 1
+        reviews = session.scalars(select(EvaluationReviewRunRecord)).all()
+        assert reviews
+        assert all(review.status == "FAILED" for review in reviews)
+
+
+def test_known_negative_reviews_are_evidence_not_provider_failures(
+    session_factory: sessionmaker[Session],
+) -> None:
+    class NegativeReviewProvider(MockProvider):
+        def submit(self, request: ProviderRequest) -> ProviderResult:
+            if request.task_kind is TaskKind.CODE_REVIEW:
+                return ProviderResult(
+                    status="SUCCEEDED",
+                    output={
+                        "review_passed": False,
+                        "blocking_findings": ["candidate requires correction"],
+                    },
+                    provider=self.name,
+                    model="deterministic-mock-v1",
+                    usage={"input_tokens": 0, "output_tokens": 0},
+                )
+            return super().submit(request)
+
+    service = ControlPlaneService(
+        session_factory,
+        provider_bindings=tuple(
+            ProviderBinding(profile, NegativeReviewProvider())
+            for profile in _independent_profiles()
+        ),
+        evidence_store=StaticEvidenceStore(),  # type: ignore[arg-type]
+    )
+    workflow, _campaign, execution = _setup(
+        service,
+        key="negative-independent-reviews",
+        risk=RiskLevel.HIGH,
+    )
+
+    assessment = service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="negative-review-assessment",
     )
 
     assert assessment["decision"]["status"] == "REFINEMENT_REQUIRED"
     assert all(
-        reasons == ["insufficient_independent_reviews"]
-        for reasons in assessment["decision"]["rejected_candidates"].values()
+        review["status"] == "SUCCEEDED" and review["passed"] is False
+        for artifact in assessment["artifacts"]
+        for review in artifact["reviews"]
     )
-    with service.session_factory() as session:
-        observations = session.scalars(select(EvaluationObservationRecord)).all()
-        assert observations
-        assert all(item.validation_passed is False for item in observations)
+
+
+def test_failed_deterministic_checks_do_not_spend_reviewer_capacity(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = ControlPlaneService(
+        session_factory,
+        provider_bindings=tuple(
+            ProviderBinding(profile, MockProvider()) for profile in _independent_profiles()
+        ),
+        evidence_store=StaticEvidenceStore(),  # type: ignore[arg-type]
+        evaluation_validators=(FixedValidator("schema", passed=False),),
+    )
+    workflow, _campaign, execution = _setup(
+        service,
+        key="failed-check-skips-reviews",
+        risk=RiskLevel.HIGH,
+        required_checks=frozenset({"schema"}),
+    )
+
+    assessment = service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="failed-check-skips-review-assessment",
+    )
+
+    assert assessment["decision"]["status"] == "REFINEMENT_REQUIRED"
+    assert all(artifact["reviews"] == [] for artifact in assessment["artifacts"])
 
 
 def test_validation_is_human_only_and_api_is_replay_safe(

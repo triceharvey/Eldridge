@@ -55,6 +55,12 @@ not an independent model review. Before hosted-production claims or broader scal
 explicitly authorized real workflow end to end and retain the provider, prompt contract, artifact,
 validation, review, Git revision, protected-PR, and human-disposition evidence.
 
+Independent-review acceptance also verifies that intent commits before reviewer contact, producer
+identity and family are excluded as policy requires, review evidence binds the candidate digest,
+known negative reviews remain valid negative evidence, and ambiguous producer/reviewer calls pause
+until a human marks them failed. No test may turn an `UNKNOWN` result into success or silently retry
+the original provider request.
+
 ## Critical acceptance cases
 
 | Case | Expected result |

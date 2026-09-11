@@ -66,6 +66,11 @@ after an ambiguous outcome. Phase 5.2D makes only controller-validated, digest-b
 results eligible as learning evidence. High-risk results remain failed validation observations until
 the required independent review is durably satisfied.
 
+Phase 5.2E persists reviewer intent before execution and accepts review evidence only from a
+policy-eligible provider other than the producer. High-risk orchestration also requires a different
+provider family and selects distinct reviewer families. A timeout never becomes a positive learning signal:
+it remains `UNKNOWN` until a human conservatively marks it failed.
+
 ## Evidence quality and poisoning resistance
 
 Direct task success is useful but incomplete. Later phases should correlate producer performance with downstream test failures, security findings, review reversals, rollbacks, and escaped defects. These delayed outcomes must be attributed carefully so a provider is not rewarded for merely producing schema-valid output.

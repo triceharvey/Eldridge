@@ -424,6 +424,67 @@ class EvaluationObservationRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class EvaluationReviewRunRecord(Base):
+    __tablename__ = "evaluation_review_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "artifact_id", "reviewer_provider_id", name="uq_evaluation_artifact_reviewer"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    assessment_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_assessments.id"), nullable=False, index=True
+    )
+    artifact_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_artifacts.id"), nullable=False, index=True
+    )
+    candidate_provider_run_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_provider_runs.id"), nullable=False, index=True
+    )
+    reviewer_provider_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    reviewer_provider_family: Mapped[str] = mapped_column(String(128), nullable=False)
+    reviewer_model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    reviewer_profile_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    passed: Mapped[bool | None] = mapped_column(Boolean)
+    evidence_digest: Mapped[str | None] = mapped_column(String(71))
+    reviewed_output_digest: Mapped[str] = mapped_column(String(71), nullable=False)
+    output_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    usage_json: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False, default=dict)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EvaluationReconciliationRecord(Base):
+    __tablename__ = "evaluation_reconciliations"
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_id", "idempotency_key", name="uq_evaluation_reconciliation_actor_key"
+        ),
+        UniqueConstraint("target_type", "target_id", name="uq_evaluation_reconciliation_target"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), nullable=False, index=True)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    affected_run_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class CiCheckEvidence(Base):
     __tablename__ = "ci_check_evidence"
     __table_args__ = (

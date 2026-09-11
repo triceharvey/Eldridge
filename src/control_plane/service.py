@@ -65,7 +65,9 @@ from control_plane.evaluation import (
     EvaluationBatch,
     EvaluationExecutionStatus,
     EvaluationPolicy,
+    EvaluationReconciliationDecision,
     EvaluationStatus,
+    IndependentReview,
     MultiModelEvaluator,
     PromptVariant,
     validate_evaluation_identifier,
@@ -75,6 +77,7 @@ from control_plane.evaluation_validation import (
 )
 from control_plane.evaluation_validation import (
     EvaluationValidator,
+    SecurityBoundaryValidator,
     ValidationOutcome,
     default_evaluation_validators,
 )
@@ -108,6 +111,8 @@ from control_plane.persistence import (
     EvaluationExecutionRecord,
     EvaluationObservationRecord,
     EvaluationProviderRunRecord,
+    EvaluationReconciliationRecord,
+    EvaluationReviewRunRecord,
     ExecutionReconciliation,
     IdempotencyRecord,
     MergeConfirmationRecord,
@@ -1288,6 +1293,118 @@ class ControlPlaneService:
                 raise NotFoundError("evaluation execution was not found")
             return self._evaluation_execution_dict(session, execution)
 
+    def reconcile_evaluation_execution(
+        self,
+        *,
+        workflow_id: str,
+        execution_id: str,
+        actor_id: str,
+        idempotency_key: str,
+        decision: EvaluationReconciliationDecision,
+        rationale: str,
+    ) -> dict[str, Any]:
+        if not 8 <= len(idempotency_key.strip()) <= 128:
+            raise ValidationError("evaluation reconciliation idempotency key is invalid")
+        if not rationale.strip() or len(rationale.strip()) > 2_000:
+            raise ValidationError("evaluation reconciliation rationale is invalid")
+        request_digest = self._digest(
+            {
+                "target_type": "PROVIDER_EXECUTION",
+                "target_id": execution_id,
+                "decision": decision.value,
+                "rationale": rationale.strip(),
+            }
+        )
+        with self.session_factory() as session, session.begin():
+            self.policy.authorize(
+                session,
+                actor_id,
+                Capability.RECONCILE_EVALUATION,
+                require_human=True,
+            )
+            self._get_workflow(session, workflow_id, lock=True)
+            existing = session.scalar(
+                select(EvaluationReconciliationRecord).where(
+                    EvaluationReconciliationRecord.actor_id == actor_id,
+                    EvaluationReconciliationRecord.idempotency_key == idempotency_key.strip(),
+                )
+            )
+            if existing is not None:
+                if existing.request_digest != request_digest:
+                    raise ConflictError("evaluation reconciliation idempotency key was reused")
+                execution = session.get(EvaluationExecutionRecord, execution_id)
+                if execution is None or execution.workflow_id != workflow_id:
+                    raise NotFoundError("evaluation execution was not found")
+                return {
+                    **self._evaluation_execution_dict(session, execution),
+                    "reconciliation": self._evaluation_reconciliation_dict(existing),
+                    "replayed": True,
+                }
+            execution = session.get(EvaluationExecutionRecord, execution_id, with_for_update=True)
+            if execution is None or execution.workflow_id != workflow_id:
+                raise NotFoundError("evaluation execution was not found")
+            if execution.status != EvaluationExecutionStatus.UNKNOWN.value:
+                raise ConflictError("evaluation execution is not awaiting reconciliation")
+            if decision is not EvaluationReconciliationDecision.MARK_FAILED:
+                raise ValidationError("unsupported evaluation reconciliation decision")
+            runs = session.scalars(
+                select(EvaluationProviderRunRecord).where(
+                    EvaluationProviderRunRecord.execution_id == execution.id
+                )
+            ).all()
+            unknown_runs = [
+                run for run in runs if run.status == EvaluationExecutionStatus.UNKNOWN.value
+            ]
+            if not unknown_runs:
+                raise ConflictError("evaluation execution has no unknown provider runs")
+            affected_run_ids = sorted(run.id for run in unknown_runs)
+            for run in unknown_runs:
+                run.status = EvaluationExecutionStatus.FAILED.value
+                run.error_code = "HumanReconciledUnknownAsFailed"
+                run.completed_at = datetime.now(UTC)
+            succeeded = sum(run.status == "SUCCEEDED" for run in runs)
+            execution.status = (
+                EvaluationExecutionStatus.PARTIAL.value
+                if succeeded
+                else EvaluationExecutionStatus.FAILED.value
+            )
+            execution.error_code = "HumanReconciledUnknownAsFailed"
+            execution.completed_at = datetime.now(UTC)
+            reconciliation = EvaluationReconciliationRecord(
+                workflow_id=workflow_id,
+                campaign_id=execution.campaign_id,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key.strip(),
+                request_digest=request_digest,
+                target_type="PROVIDER_EXECUTION",
+                target_id=execution.id,
+                decision=decision.value,
+                rationale=rationale.strip(),
+                affected_run_ids=affected_run_ids,
+            )
+            session.add(reconciliation)
+            session.flush()
+            append_audit_event(
+                session,
+                workflow_id=workflow_id,
+                event_type="evaluation.execution_reconciled",
+                actor_id=actor_id,
+                resource_type="evaluation_execution",
+                resource_id=execution.id,
+                outcome=execution.status,
+                payload={
+                    "campaign_id": execution.campaign_id,
+                    "decision": decision.value,
+                    "affected_run_ids": affected_run_ids,
+                    "reconciliation_id": reconciliation.id,
+                },
+            )
+            return {
+                **self._evaluation_execution_dict(session, execution),
+                "reconciliation": self._evaluation_reconciliation_dict(reconciliation),
+                "replayed": False,
+            }
+
     def validate_evaluation_execution(
         self,
         *,
@@ -1316,13 +1433,16 @@ class ControlPlaneService:
                     raise ConflictError("evaluation assessment idempotency key was reused")
                 if existing.status == EvaluationAssessmentStatus.DECIDED.value:
                     return {**self._evaluation_assessment_dict(session, existing), "replayed": True}
-                if existing.status == EvaluationAssessmentStatus.CHECKS_READY.value:
+                if existing.status in {
+                    EvaluationAssessmentStatus.CHECKS_READY.value,
+                    EvaluationAssessmentStatus.REVIEWS_READY.value,
+                }:
                     resume_assessment_id = existing.id
                 else:
                     raise ConflictError("evaluation assessment requires recovery")
 
         if resume_assessment_id is not None:
-            result = self._submit_trusted_assessment(resume_assessment_id, actor_id)
+            result = self._review_or_submit_trusted_assessment(resume_assessment_id, actor_id)
             return {**result, "replayed": True}
 
         with self.session_factory() as session, session.begin():
@@ -1552,7 +1672,7 @@ class ControlPlaneService:
                 },
             )
 
-        return self._submit_trusted_assessment(assessment_id, actor_id)
+        return self._review_or_submit_trusted_assessment(assessment_id, actor_id)
 
     def get_evaluation_assessment(
         self, workflow_id: str, assessment_id: str, *, principal_id: str
@@ -1565,6 +1685,434 @@ class ControlPlaneService:
                 raise NotFoundError("evaluation assessment was not found")
             return self._evaluation_assessment_dict(session, assessment)
 
+    def reconcile_evaluation_reviews(
+        self,
+        *,
+        workflow_id: str,
+        assessment_id: str,
+        actor_id: str,
+        idempotency_key: str,
+        decision: EvaluationReconciliationDecision,
+        rationale: str,
+    ) -> dict[str, Any]:
+        if not 8 <= len(idempotency_key.strip()) <= 128:
+            raise ValidationError("evaluation reconciliation idempotency key is invalid")
+        if not rationale.strip() or len(rationale.strip()) > 2_000:
+            raise ValidationError("evaluation reconciliation rationale is invalid")
+        request_digest = self._digest(
+            {
+                "target_type": "REVIEW_ASSESSMENT",
+                "target_id": assessment_id,
+                "decision": decision.value,
+                "rationale": rationale.strip(),
+            }
+        )
+        resume_reconciliation: dict[str, Any] | None = None
+        with self.session_factory() as session:
+            self.policy.authorize(
+                session,
+                actor_id,
+                Capability.RECONCILE_EVALUATION,
+                require_human=True,
+            )
+            existing = session.scalar(
+                select(EvaluationReconciliationRecord).where(
+                    EvaluationReconciliationRecord.actor_id == actor_id,
+                    EvaluationReconciliationRecord.idempotency_key == idempotency_key.strip(),
+                )
+            )
+            if existing is not None:
+                if existing.request_digest != request_digest:
+                    raise ConflictError("evaluation reconciliation idempotency key was reused")
+                assessment = session.get(EvaluationAssessmentRecord, assessment_id)
+                if assessment is None or assessment.workflow_id != workflow_id:
+                    raise NotFoundError("evaluation assessment was not found")
+                if assessment.status == EvaluationAssessmentStatus.DECIDED.value:
+                    result = self._evaluation_assessment_dict(session, assessment)
+                    result["reconciliation"] = self._evaluation_reconciliation_dict(existing)
+                    result["replayed"] = True
+                    return result
+                if assessment.status != EvaluationAssessmentStatus.REVIEWS_READY.value:
+                    raise ConflictError("evaluation reconciliation requires recovery")
+                resume_reconciliation = self._evaluation_reconciliation_dict(existing)
+        if resume_reconciliation is not None:
+            result = self._submit_trusted_assessment(assessment_id, actor_id)
+            result["reconciliation"] = resume_reconciliation
+            result["replayed"] = True
+            return result
+
+        with self.session_factory() as session, session.begin():
+            self.policy.authorize(
+                session,
+                actor_id,
+                Capability.RECONCILE_EVALUATION,
+                require_human=True,
+            )
+            self._get_workflow(session, workflow_id, lock=True)
+            existing = session.scalar(
+                select(EvaluationReconciliationRecord).where(
+                    EvaluationReconciliationRecord.actor_id == actor_id,
+                    EvaluationReconciliationRecord.idempotency_key == idempotency_key.strip(),
+                )
+            )
+            if existing is not None:
+                if existing.request_digest != request_digest:
+                    raise ConflictError("evaluation reconciliation idempotency key was reused")
+                raise ConflictError("evaluation reconciliation completed concurrently; retry")
+            assessment = session.get(
+                EvaluationAssessmentRecord, assessment_id, with_for_update=True
+            )
+            if assessment is None or assessment.workflow_id != workflow_id:
+                raise NotFoundError("evaluation assessment was not found")
+            if assessment.status != EvaluationAssessmentStatus.REVIEW_UNKNOWN.value:
+                raise ConflictError("evaluation reviews are not awaiting reconciliation")
+            if decision is not EvaluationReconciliationDecision.MARK_FAILED:
+                raise ValidationError("unsupported evaluation reconciliation decision")
+            review_runs = session.scalars(
+                select(EvaluationReviewRunRecord).where(
+                    EvaluationReviewRunRecord.assessment_id == assessment.id
+                )
+            ).all()
+            unknown_runs = [
+                run for run in review_runs if run.status == EvaluationExecutionStatus.UNKNOWN.value
+            ]
+            if not unknown_runs:
+                raise ConflictError("evaluation assessment has no unknown review runs")
+            affected_run_ids = sorted(run.id for run in unknown_runs)
+            for run in unknown_runs:
+                run.status = EvaluationExecutionStatus.FAILED.value
+                run.error_code = "HumanReconciledUnknownAsFailed"
+                run.completed_at = datetime.now(UTC)
+            assessment.status = EvaluationAssessmentStatus.REVIEWS_READY.value
+            reconciliation = EvaluationReconciliationRecord(
+                workflow_id=workflow_id,
+                campaign_id=assessment.campaign_id,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key.strip(),
+                request_digest=request_digest,
+                target_type="REVIEW_ASSESSMENT",
+                target_id=assessment.id,
+                decision=decision.value,
+                rationale=rationale.strip(),
+                affected_run_ids=affected_run_ids,
+            )
+            session.add(reconciliation)
+            session.flush()
+            append_audit_event(
+                session,
+                workflow_id=workflow_id,
+                event_type="evaluation.reviews_reconciled",
+                actor_id=actor_id,
+                resource_type="evaluation_assessment",
+                resource_id=assessment.id,
+                outcome=assessment.status,
+                payload={
+                    "campaign_id": assessment.campaign_id,
+                    "decision": decision.value,
+                    "affected_run_ids": affected_run_ids,
+                    "reconciliation_id": reconciliation.id,
+                },
+            )
+            reconciliation_result = self._evaluation_reconciliation_dict(reconciliation)
+
+        result = self._submit_trusted_assessment(assessment_id, actor_id)
+        result["reconciliation"] = reconciliation_result
+        result["replayed"] = False
+        return result
+
+    def _review_or_submit_trusted_assessment(
+        self, assessment_id: str, actor_id: str
+    ) -> dict[str, Any]:
+        with self.session_factory() as session:
+            assessment = session.get(EvaluationAssessmentRecord, assessment_id)
+            if assessment is None:
+                raise NotFoundError("evaluation assessment was not found")
+            campaign = session.get(EvaluationCampaignRecord, assessment.campaign_id)
+            if campaign is None:
+                raise ConflictError("evaluation campaign disappeared")
+            if assessment.status == EvaluationAssessmentStatus.REVIEWS_READY.value:
+                return self._submit_trusted_assessment(assessment.id, actor_id)
+            if assessment.status != EvaluationAssessmentStatus.CHECKS_READY.value:
+                raise ConflictError("evaluation assessment is not ready for review")
+            if campaign.minimum_independent_reviews == 0:
+                return self._submit_trusted_assessment(assessment.id, actor_id)
+
+        provider_health = {
+            provider_id: binding.profile.enabled and self._provider_is_healthy(binding.provider)
+            for provider_id, binding in self.provider_bindings.items()
+        }
+        prepared_reviews: list[PreparedEvaluationRun] = []
+        with self.session_factory() as session, session.begin():
+            assessment = session.get(
+                EvaluationAssessmentRecord, assessment_id, with_for_update=True
+            )
+            if (
+                assessment is None
+                or assessment.status != EvaluationAssessmentStatus.CHECKS_READY.value
+            ):
+                raise ConflictError("evaluation assessment state changed before review")
+            campaign = session.get(EvaluationCampaignRecord, assessment.campaign_id)
+            workflow = session.get(Workflow, assessment.workflow_id)
+            execution = session.get(EvaluationExecutionRecord, assessment.execution_id)
+            if campaign is None or workflow is None or execution is None:
+                raise ConflictError("evaluation review source disappeared")
+            profiles = tuple(
+                replace(
+                    binding.profile,
+                    healthy=provider_health[binding.profile.provider_id],
+                )
+                for binding in self.provider_bindings.values()
+            )
+            profiles = self.evidence_store.hydrate_profiles(session, profiles)
+            profiles_by_id = {profile.provider_id: profile for profile in profiles}
+            producer_runs = {
+                run.id: run
+                for run in session.scalars(
+                    select(EvaluationProviderRunRecord).where(
+                        EvaluationProviderRunRecord.execution_id == execution.id
+                    )
+                ).all()
+            }
+            artifacts = session.scalars(
+                select(EvaluationArtifactRecord)
+                .where(EvaluationArtifactRecord.assessment_id == assessment.id)
+                .order_by(EvaluationArtifactRecord.provider_run_id)
+            ).all()
+            check_records = session.scalars(
+                select(EvaluationCheckRecord).where(
+                    EvaluationCheckRecord.assessment_id == assessment.id
+                )
+            ).all()
+            passed_checks_by_artifact: dict[str, set[str]] = {}
+            for check in check_records:
+                if check.status == "COMPLETED" and check.passed is True:
+                    passed_checks_by_artifact.setdefault(check.artifact_id, set()).add(
+                        check.check_name
+                    )
+            required_checks = set(campaign.required_checks)
+            for artifact in artifacts:
+                if not required_checks.issubset(passed_checks_by_artifact.get(artifact.id, set())):
+                    continue
+                producer = producer_runs.get(artifact.provider_run_id)
+                if producer is None:
+                    raise ConflictError("evaluation artifact producer disappeared")
+                routing = self.router.route(
+                    RoutingRequest(
+                        required_capabilities=frozenset(
+                            {
+                                WorkCapability(campaign.work_capability),
+                                WorkCapability.CODE_REVIEW,
+                            }
+                        ),
+                        data_classification=DataClassification[workflow.data_classification],
+                        risk=RiskLevel[campaign.risk],
+                        purpose=RoutingPurpose.REVIEW,
+                        allowed_egress=frozenset({EgressBoundary.LOCAL}),
+                        minimum_evidence_samples=(
+                            self.high_risk_min_evidence_samples
+                            if RiskLevel[campaign.risk] >= RiskLevel.HIGH
+                            else 0
+                        ),
+                        producer_provider_id=producer.provider_id,
+                        producer_family=producer.provider_family,
+                        objective=self.routing_objective,
+                    ),
+                    profiles,
+                )
+                selected_reviewers: list[str] = []
+                selected_families: set[str] = set()
+                for ranked in routing.ranked_candidates:
+                    profile = profiles_by_id[ranked.provider_id]
+                    if (
+                        RiskLevel[campaign.risk] >= RiskLevel.HIGH
+                        and profile.provider_family in selected_families
+                    ):
+                        continue
+                    selected_reviewers.append(profile.provider_id)
+                    selected_families.add(profile.provider_family)
+                    if len(selected_reviewers) == campaign.minimum_independent_reviews:
+                        break
+                if len(selected_reviewers) < campaign.minimum_independent_reviews:
+                    raise ConflictError("insufficient policy-eligible independent reviewers")
+                for reviewer_id in selected_reviewers:
+                    profile = profiles_by_id[reviewer_id]
+                    review = EvaluationReviewRunRecord(
+                        assessment_id=assessment.id,
+                        artifact_id=artifact.id,
+                        candidate_provider_run_id=producer.id,
+                        reviewer_provider_id=profile.provider_id,
+                        reviewer_provider_family=profile.provider_family,
+                        reviewer_model_version=profile.model_version,
+                        reviewer_profile_version=profile.profile_version,
+                        request_digest="pending",
+                        status=EvaluationAssessmentStatus.REVIEW_PREPARED.value,
+                        reviewed_output_digest=artifact.digest,
+                        output_json={},
+                        usage_json={},
+                    )
+                    session.add(review)
+                    session.flush()
+                    context = {
+                        "content_trust": "UNTRUSTED_CANDIDATE_OUTPUT",
+                        "evaluation_campaign_id": campaign.id,
+                        "evaluation_assessment_id": assessment.id,
+                        "candidate_provider_id": producer.provider_id,
+                        "candidate_provider_family": producer.provider_family,
+                        "reviewed_output_digest": artifact.digest,
+                        "candidate_output": artifact.content_json,
+                        "workflow_version": artifact.workflow_version,
+                        "candidate_revision": artifact.candidate_revision,
+                    }
+                    request = ProviderRequest(
+                        run_id=review.id,
+                        workflow_id=workflow.id,
+                        task_id=execution.task_id,
+                        task_kind=TaskKind.CODE_REVIEW,
+                        role=TASK_ROLE[TaskKind.CODE_REVIEW],
+                        objective=(
+                            "Independently review the candidate output against the workflow "
+                            "objective. Return only the bounded code-review schema."
+                        ),
+                        context=context,
+                        required_capability=Capability.RUN_CODE_REVIEW,
+                        idempotency_key=review.id,
+                    )
+                    review.request_digest = self._digest(asdict(request))
+                    prepared_reviews.append(
+                        PreparedEvaluationRun(
+                            run_id=review.id,
+                            execution_id=assessment.id,
+                            binding=self.provider_bindings[reviewer_id],
+                            profile=profile,
+                            request=request,
+                        )
+                    )
+            assessment.status = EvaluationAssessmentStatus.REVIEW_PREPARED.value
+            append_audit_event(
+                session,
+                workflow_id=assessment.workflow_id,
+                event_type="evaluation.reviews_prepared",
+                actor_id=actor_id,
+                resource_type="evaluation_assessment",
+                resource_id=assessment.id,
+                outcome="SUCCEEDED",
+                payload={
+                    "review_count": len(prepared_reviews),
+                    "minimum_independent_reviews": campaign.minimum_independent_reviews,
+                    "local_egress_only": True,
+                },
+            )
+
+        if not prepared_reviews:
+            with self.session_factory() as session, session.begin():
+                assessment = session.get(
+                    EvaluationAssessmentRecord, assessment_id, with_for_update=True
+                )
+                if (
+                    assessment is None
+                    or assessment.status != EvaluationAssessmentStatus.REVIEW_PREPARED.value
+                ):
+                    raise ConflictError(
+                        "evaluation assessment state changed before empty review completion"
+                    )
+                assessment.status = EvaluationAssessmentStatus.REVIEWS_READY.value
+            return self._submit_trusted_assessment(assessment_id, actor_id)
+
+        with self.session_factory() as session, session.begin():
+            assessment = session.get(
+                EvaluationAssessmentRecord, assessment_id, with_for_update=True
+            )
+            if (
+                assessment is None
+                or assessment.status != EvaluationAssessmentStatus.REVIEW_PREPARED.value
+            ):
+                raise ConflictError("evaluation assessment state changed before reviews ran")
+            assessment.status = EvaluationAssessmentStatus.REVIEWS_RUNNING.value
+            review_runs = session.scalars(
+                select(EvaluationReviewRunRecord).where(
+                    EvaluationReviewRunRecord.assessment_id == assessment.id
+                )
+            ).all()
+            now = datetime.now(UTC)
+            for review in review_runs:
+                review.status = EvaluationAssessmentStatus.REVIEWS_RUNNING.value
+                review.started_at = now
+
+        outcomes: list[EvaluationRunOutcome] = []
+        with ThreadPoolExecutor(max_workers=min(len(prepared_reviews), 8)) as pool:
+            futures = {
+                pool.submit(self._execute_evaluation_review_run, item): item.run_id
+                for item in prepared_reviews
+            }
+            for future in as_completed(futures):
+                try:
+                    outcomes.append(future.result())
+                except Exception:
+                    outcomes.append(
+                        EvaluationRunOutcome(
+                            run_id=futures[future],
+                            status=EvaluationExecutionStatus.UNKNOWN.value,
+                            output={},
+                            output_digest=None,
+                            usage={},
+                            latency_ms=0,
+                            error_code="InternalReviewExecutionError",
+                        )
+                    )
+
+        with self.session_factory() as session, session.begin():
+            assessment = session.get(
+                EvaluationAssessmentRecord, assessment_id, with_for_update=True
+            )
+            if (
+                assessment is None
+                or assessment.status != EvaluationAssessmentStatus.REVIEWS_RUNNING.value
+            ):
+                raise ConflictError("evaluation assessment state changed during reviews")
+            for outcome in outcomes:
+                review_record = session.get(
+                    EvaluationReviewRunRecord, outcome.run_id, with_for_update=True
+                )
+                if review_record is None or review_record.assessment_id != assessment.id:
+                    raise ConflictError("evaluation review run disappeared")
+                review_record.status = outcome.status
+                review_record.output_json = outcome.output
+                review_record.usage_json = outcome.usage
+                review_record.latency_ms = outcome.latency_ms
+                review_record.error_code = outcome.error_code
+                review_record.completed_at = datetime.now(UTC)
+                if outcome.status == "SUCCEEDED":
+                    review_record.passed = outcome.output.get("review_passed") is True
+                    review_record.evidence_digest = outcome.output_digest
+            unknown = any(
+                outcome.status == EvaluationExecutionStatus.UNKNOWN.value for outcome in outcomes
+            )
+            assessment.status = (
+                EvaluationAssessmentStatus.REVIEW_UNKNOWN.value
+                if unknown
+                else EvaluationAssessmentStatus.REVIEWS_READY.value
+            )
+            append_audit_event(
+                session,
+                workflow_id=assessment.workflow_id,
+                event_type="evaluation.reviews_completed",
+                actor_id="orchestrator",
+                resource_type="evaluation_assessment",
+                resource_id=assessment.id,
+                outcome=assessment.status,
+                payload={
+                    "review_count": len(outcomes),
+                    "succeeded": sum(item.status == "SUCCEEDED" for item in outcomes),
+                    "requires_reconciliation": unknown,
+                },
+            )
+            if unknown:
+                result = self._evaluation_assessment_dict(session, assessment)
+                result["replayed"] = False
+                return result
+
+        return self._submit_trusted_assessment(assessment_id, actor_id)
+
     def _submit_trusted_assessment(self, assessment_id: str, actor_id: str) -> dict[str, Any]:
         with self.session_factory() as session:
             assessment = session.get(EvaluationAssessmentRecord, assessment_id)
@@ -1572,8 +2120,11 @@ class ControlPlaneService:
                 raise NotFoundError("evaluation assessment was not found")
             if assessment.status == EvaluationAssessmentStatus.DECIDED.value:
                 return self._evaluation_assessment_dict(session, assessment)
-            if assessment.status != EvaluationAssessmentStatus.CHECKS_READY.value:
-                raise ConflictError("evaluation assessment checks are not ready")
+            if assessment.status not in {
+                EvaluationAssessmentStatus.CHECKS_READY.value,
+                EvaluationAssessmentStatus.REVIEWS_READY.value,
+            }:
+                raise ConflictError("evaluation assessment evidence is not ready")
             execution = session.get(EvaluationExecutionRecord, assessment.execution_id)
             campaign = session.get(EvaluationCampaignRecord, assessment.campaign_id)
             if execution is None or campaign is None:
@@ -1600,6 +2151,14 @@ class ControlPlaneService:
             checks_by_artifact: dict[str, list[EvaluationCheckRecord]] = {}
             for check in checks:
                 checks_by_artifact.setdefault(check.artifact_id, []).append(check)
+            reviews = session.scalars(
+                select(EvaluationReviewRunRecord).where(
+                    EvaluationReviewRunRecord.assessment_id == assessment.id
+                )
+            ).all()
+            reviews_by_artifact: dict[str, list[EvaluationReviewRunRecord]] = {}
+            for review in reviews:
+                reviews_by_artifact.setdefault(review.artifact_id, []).append(review)
             routing_scores = {
                 str(item["provider_id"]): float(item["score"])
                 for item in execution.routing_snapshot.get("selected", [])
@@ -1622,6 +2181,22 @@ class ControlPlaneService:
                     for check in sorted(run_checks, key=lambda item: item.check_name)
                     if check.status == "COMPLETED" and check.evidence_digest is not None
                 )
+                independent_reviews = tuple(
+                    IndependentReview(
+                        reviewer_provider_id=review.reviewer_provider_id,
+                        reviewer_provider_family=review.reviewer_provider_family,
+                        reviewer_model_version=review.reviewer_model_version,
+                        reviewer_profile_version=review.reviewer_profile_version,
+                        reviewed_output_digest=review.reviewed_output_digest,
+                        passed=review.passed is True,
+                        evidence_digest=review.evidence_digest,
+                    )
+                    for review in sorted(
+                        reviews_by_artifact.get(artifact.id, []) if artifact else [],
+                        key=lambda item: item.reviewer_provider_id,
+                    )
+                    if review.status == "SUCCEEDED" and review.evidence_digest is not None
+                )
                 candidates.append(
                     CandidateEvidence(
                         candidate_id=run.id,
@@ -1638,7 +2213,7 @@ class ControlPlaneService:
                         cost_microunits=0,
                         routing_score=routing_scores.get(run.provider_id, 0.0),
                         checks=deterministic_checks,
-                        reviews=(),
+                        reviews=independent_reviews,
                     )
                 )
             workflow_id = assessment.workflow_id
@@ -1657,7 +2232,10 @@ class ControlPlaneService:
             )
             if assessment is None:
                 raise ConflictError("evaluation assessment disappeared after decision")
-            if assessment.status == EvaluationAssessmentStatus.CHECKS_READY.value:
+            if assessment.status in {
+                EvaluationAssessmentStatus.CHECKS_READY.value,
+                EvaluationAssessmentStatus.REVIEWS_READY.value,
+            }:
                 assessment.status = EvaluationAssessmentStatus.DECIDED.value
                 assessment.batch_id = str(decision["id"])
                 assessment.completed_at = datetime.now(UTC)
@@ -1738,6 +2316,78 @@ class ControlPlaneService:
             result["decision"] = decision
             result["replayed"] = False
             return result
+
+    @staticmethod
+    def _execute_evaluation_review_run(
+        prepared: PreparedEvaluationRun,
+    ) -> EvaluationRunOutcome:
+        started = monotonic()
+        try:
+            result = prepared.binding.provider.submit(prepared.request)
+        except Exception as exc:
+            return EvaluationRunOutcome(
+                run_id=prepared.run_id,
+                status=EvaluationExecutionStatus.UNKNOWN.value,
+                output={},
+                output_digest=None,
+                usage={},
+                latency_ms=max(int((monotonic() - started) * 1000), 0),
+                error_code=type(exc).__name__[:64],
+            )
+        try:
+            if result.status != "SUCCEEDED":
+                raise ValidationError("evaluation reviewer did not report success")
+            if result.provider != prepared.binding.provider.name:
+                raise ValidationError("evaluation reviewer identity mismatch")
+            if result.model != prepared.profile.model_version:
+                raise ValidationError("evaluation reviewer model mismatch")
+            if type(result.output.get("review_passed")) is not bool:
+                raise ValidationError("evaluation review decision must be boolean")
+            if not isinstance(result.output.get("blocking_findings"), list):
+                raise ValidationError("evaluation review findings must be a list")
+            if any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in result.usage.values()
+            ):
+                raise ValidationError("evaluation reviewer usage is invalid")
+            canonical_output = json.dumps(
+                result.output, sort_keys=True, separators=(",", ":")
+            ).encode()
+            if len(canonical_output) > 1_048_576:
+                raise ValidationError("evaluation reviewer output exceeds one MiB")
+            output_digest = "sha256:" + sha256(canonical_output).hexdigest()
+            context = prepared.request.context
+            boundary = SecurityBoundaryValidator().validate(
+                TrustedEvaluationArtifact(
+                    artifact_id=prepared.run_id,
+                    output=result.output,
+                    output_digest=output_digest,
+                    task_kind=TaskKind.CODE_REVIEW,
+                    workflow_version=int(context["workflow_version"]),
+                    candidate_revision=context.get("candidate_revision"),
+                )
+            )
+            if not boundary.passed:
+                raise ValidationError("evaluation reviewer crossed the output boundary")
+        except (KeyError, TypeError, ValueError, ValidationError):
+            return EvaluationRunOutcome(
+                run_id=prepared.run_id,
+                status=EvaluationExecutionStatus.FAILED.value,
+                output={},
+                output_digest=None,
+                usage={},
+                latency_ms=max(int((monotonic() - started) * 1000), 0),
+                error_code="InvalidReviewResult",
+            )
+        return EvaluationRunOutcome(
+            run_id=prepared.run_id,
+            status="SUCCEEDED",
+            output=result.output,
+            output_digest=output_digest,
+            usage=result.usage,
+            latency_ms=max(int((monotonic() - started) * 1000), 0),
+            error_code=None,
+        )
 
     @staticmethod
     def _execute_evaluation_provider_run(
@@ -5346,6 +5996,19 @@ class ControlPlaneService:
             checks_by_artifact.setdefault(check.artifact_id, []).append(
                 self._evaluation_check_dict(check)
             )
+        reviews = session.scalars(
+            select(EvaluationReviewRunRecord)
+            .where(EvaluationReviewRunRecord.assessment_id == record.id)
+            .order_by(
+                EvaluationReviewRunRecord.artifact_id,
+                EvaluationReviewRunRecord.reviewer_provider_id,
+            )
+        ).all()
+        reviews_by_artifact: dict[str, list[dict[str, Any]]] = {}
+        for review in reviews:
+            reviews_by_artifact.setdefault(review.artifact_id, []).append(
+                self._evaluation_review_dict(review)
+            )
         result: dict[str, Any] = {
             "id": record.id,
             "execution_id": record.execution_id,
@@ -5364,6 +6027,7 @@ class ControlPlaneService:
                     "candidate_revision": artifact.candidate_revision,
                     "content": artifact.content_json,
                     "checks": checks_by_artifact.get(artifact.id, []),
+                    "reviews": reviews_by_artifact.get(artifact.id, []),
                     "created_at": artifact.created_at.isoformat(),
                 }
                 for artifact in artifacts
@@ -5390,6 +6054,42 @@ class ControlPlaneService:
             "details": record.details_json,
             "created_at": record.created_at.isoformat(),
             "completed_at": record.completed_at.isoformat() if record.completed_at else None,
+        }
+
+    @staticmethod
+    def _evaluation_review_dict(record: EvaluationReviewRunRecord) -> dict[str, Any]:
+        return {
+            "id": record.id,
+            "artifact_id": record.artifact_id,
+            "candidate_provider_run_id": record.candidate_provider_run_id,
+            "reviewer_provider_id": record.reviewer_provider_id,
+            "reviewer_provider_family": record.reviewer_provider_family,
+            "reviewer_model_version": record.reviewer_model_version,
+            "reviewer_profile_version": record.reviewer_profile_version,
+            "status": record.status,
+            "passed": record.passed,
+            "evidence_digest": record.evidence_digest,
+            "reviewed_output_digest": record.reviewed_output_digest,
+            "latency_ms": record.latency_ms,
+            "error_code": record.error_code,
+            "created_at": record.created_at.isoformat(),
+            "completed_at": record.completed_at.isoformat() if record.completed_at else None,
+        }
+
+    @staticmethod
+    def _evaluation_reconciliation_dict(
+        record: EvaluationReconciliationRecord,
+    ) -> dict[str, Any]:
+        return {
+            "id": record.id,
+            "workflow_id": record.workflow_id,
+            "campaign_id": record.campaign_id,
+            "target_type": record.target_type,
+            "target_id": record.target_id,
+            "decision": record.decision,
+            "rationale": record.rationale,
+            "affected_run_ids": record.affected_run_ids,
+            "created_at": record.created_at.isoformat(),
         }
 
     @staticmethod
