@@ -11,6 +11,13 @@ Start from `provider-policy.example.json` and copy it to the ignored `provider-p
 
 Claude activation disables mock-provider fallback. This prevents an outage, routing failure, or policy mismatch from silently changing which model processes a task. The configured model identifier is copied into the routing profile and evidence partition. A changed model therefore starts without inherited qualification evidence.
 
+A Claude Pro subscription and the Anthropic Messages API are separate access paths. Pro can support
+interactive Claude and Claude Code work, but it must not be represented as an API credential or
+silently routed through the Messages adapter. Subscription-backed CLI or Agent SDK use requires its
+own reviewed adapter and authentication flow; shared production automation should retain predictable,
+separately budgeted API identity. Eldridge currently implements only the disabled-by-default
+Messages API adapter.
+
 Devin activation currently exposes only its bounded remote-session lifecycle: create, poll, and cancel with repository scope, tags, a maximum ACU limit, and optional structured-output schema. It is not placed in the normal task-provider routing pool yet. Phase 3 must first ingest Devin's commit or pull-request revision and independently validate its CI evidence; otherwise a remote result could bypass the same revision-bound controls applied to local worktrees.
 
 Every routing record stores both the capability-router version and provider-activation policy version. This makes later evidence and incident review attributable to the exact configured policy.

@@ -28,6 +28,7 @@ from control_plane.domain import (
 from control_plane.evaluation import (
     CandidateEvidence,
     DeterministicCheck,
+    EvaluationReconciliationDecision,
     IndependentReview,
     PromptVariant,
 )
@@ -259,6 +260,14 @@ class EvaluationAssessmentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class EvaluationReconciliationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    decision: EvaluationReconciliationDecision
+    rationale: str = Field(min_length=1, max_length=2_000)
 
 
 def create_app(
@@ -661,6 +670,23 @@ def create_app(
             workflow_id, execution_id, principal_id=principal_id
         )
 
+    @app.post("/workflows/{workflow_id}/evaluation-executions/{execution_id}/reconcile")
+    def reconcile_evaluation_execution(
+        workflow_id: str,
+        execution_id: str,
+        request: EvaluationReconciliationCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.reconcile_evaluation_execution(
+            workflow_id=workflow_id,
+            execution_id=execution_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+            decision=request.decision,
+            rationale=request.rationale,
+        )
+
     @app.post(
         "/workflows/{workflow_id}/evaluation-executions/{execution_id}/assessments",
         status_code=status.HTTP_201_CREATED,
@@ -688,6 +714,23 @@ def create_app(
     ) -> dict[str, Any]:
         return service.get_evaluation_assessment(
             workflow_id, assessment_id, principal_id=principal_id
+        )
+
+    @app.post("/workflows/{workflow_id}/evaluation-assessments/{assessment_id}/reconcile")
+    def reconcile_evaluation_reviews(
+        workflow_id: str,
+        assessment_id: str,
+        request: EvaluationReconciliationCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.reconcile_evaluation_reviews(
+            workflow_id=workflow_id,
+            assessment_id=assessment_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+            decision=request.decision,
+            rationale=request.rationale,
         )
 
     @app.get("/ci-checks")

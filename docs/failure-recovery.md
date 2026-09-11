@@ -7,6 +7,7 @@ Recovery must preserve evidence and distinguish retryable work from ambiguous ex
 | Invalid request or provider output | Schema validation | Reject; record sanitized validation evidence | Correct input or adapter; no automatic retry loop |
 | Provider rate limit/transient outage | Normalized error | Bounded backoff with jitter and budget check | Reroute only after policy/egress review if outage persists |
 | Provider accepted work but status is unknown | Missing/ambiguous callback or timeout | Poll/reconcile using remote handle; do not duplicate | Decide disposition when provider cannot prove outcome |
+| Evaluation producer or reviewer result is unknown | Provider exception after committed run intent | Pause validation/decision; never retry the same run | When no authoritative read-only lookup exists, mark the unknown run failed with rationale |
 | Worker crashes before execution starts | Leased task expires | Return the same task to `READY`; preserve an audit event | None unless expiry repeats |
 | Worker crashes after execution starts | Running lease heartbeat expires | Mark attempt `TIMED_OUT`, block workflow, revoke its grant, reject late results | Verify external reality, then record `RETRY` or `FAIL` reconciliation |
 | Sandbox timeout/resource exhaustion | Runtime limit event | Terminate sandbox; preserve bounded diagnostics; mark attempt | Increase limit only through a new grant/policy decision |
@@ -36,6 +37,11 @@ Reconcilers compare durable intent with external reality for provider handles, s
 The implemented worker commits task and attempt state as `RUNNING` before invoking a provider or executor. A background heartbeat renews the lease in short independent transactions. Finalization locks the task and accepts evidence only when the status, owner, token, and unexpired lease still match. This makes a result from an abandoned worker non-authoritative even if it arrives after recovery has begun.
 
 An expired `LEASED` task has not started external execution and returns to `READY`. An expired `RUNNING` task has an unknown outcome: the attempt becomes `TIMED_OUT` with `LeaseExpired`, the task and workflow become blocked, and only an authenticated human with `RECONCILE_EXECUTION` may decide `RETRY` or `FAIL` with a rationale. Retry closes the abandoned task as `RECONCILED` and creates a new task and capability grant; it never reopens or overwrites the old attempt.
+
+Evaluation fan-out and review use a narrower rule. When a provider interface cannot authoritatively
+look up an ambiguous request by its durable run ID, only a human with `RECONCILE_EVALUATION` may
+record `MARK_FAILED`. The original producer or review request is never replayed, and reconciliation
+cannot manufacture output, a passing review, or a campaign winner.
 
 ## Locks and orphan cleanup
 

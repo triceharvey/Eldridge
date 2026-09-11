@@ -30,8 +30,16 @@ class EvaluationAssessmentStatus(StrEnum):
     PREPARED = "PREPARED"
     RUNNING = "RUNNING"
     CHECKS_READY = "CHECKS_READY"
+    REVIEW_PREPARED = "REVIEW_PREPARED"
+    REVIEWS_RUNNING = "REVIEWS_RUNNING"
+    REVIEW_UNKNOWN = "REVIEW_UNKNOWN"
+    REVIEWS_READY = "REVIEWS_READY"
     DECIDED = "DECIDED"
     FAILED = "FAILED"
+
+
+class EvaluationReconciliationDecision(StrEnum):
+    MARK_FAILED = "MARK_FAILED"
 
 
 @dataclass(frozen=True)
