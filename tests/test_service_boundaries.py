@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
-from control_plane.evaluation import EvaluationRecoveryDecision, PromptVariant
+from control_plane.evaluation import (
+    EvaluationReconciliationDecision,
+    EvaluationRecoveryDecision,
+    PromptVariant,
+)
 from control_plane.service import ControlPlaneService
 
 
@@ -65,4 +69,94 @@ def test_evaluation_lifecycle_commands_delegate_without_changing_the_facade(
         actor_id="operator-1",
         idempotency_key="promotion-key",
         rationale="Promote the validated winner digest.",
+    )
+
+
+def test_evaluation_pipeline_commands_delegate_without_changing_the_facade(
+    service: ControlPlaneService,
+) -> None:
+    pipeline = Mock()
+    pipeline.execute_evaluation_campaign.return_value = {"command": "execute"}
+    pipeline.get_evaluation_execution.return_value = {"query": "execution"}
+    pipeline.reconcile_evaluation_execution.return_value = {"command": "reconcile-execution"}
+    pipeline.validate_evaluation_execution.return_value = {"command": "validate"}
+    pipeline.get_evaluation_assessment.return_value = {"query": "assessment"}
+    pipeline.reconcile_evaluation_reviews.return_value = {"command": "reconcile-reviews"}
+    service.evaluation_pipeline = pipeline
+
+    variants = (PromptVariant("baseline", "Produce the requested bounded artifact."),)
+    assert service.execute_evaluation_campaign(
+        workflow_id="workflow-1",
+        campaign_id="campaign-1",
+        task_id="task-1",
+        actor_id="operator-1",
+        idempotency_key="execution-key",
+        prompt_variants=variants,
+        repair_id="repair-1",
+    ) == {"command": "execute"}
+    assert service.get_evaluation_execution(
+        "workflow-1", "execution-1", principal_id="operator-1"
+    ) == {"query": "execution"}
+    assert service.reconcile_evaluation_execution(
+        workflow_id="workflow-1",
+        execution_id="execution-1",
+        actor_id="operator-1",
+        idempotency_key="reconcile-execution-key",
+        decision=EvaluationReconciliationDecision.MARK_FAILED,
+        rationale="Resolve an ambiguous provider outcome conservatively.",
+    ) == {"command": "reconcile-execution"}
+    assert service.validate_evaluation_execution(
+        workflow_id="workflow-1",
+        execution_id="execution-1",
+        actor_id="operator-1",
+        idempotency_key="validation-key",
+    ) == {"command": "validate"}
+    assert service.get_evaluation_assessment(
+        "workflow-1", "assessment-1", principal_id="operator-1"
+    ) == {"query": "assessment"}
+    assert service.reconcile_evaluation_reviews(
+        workflow_id="workflow-1",
+        assessment_id="assessment-1",
+        actor_id="operator-1",
+        idempotency_key="reconcile-review-key",
+        decision=EvaluationReconciliationDecision.MARK_FAILED,
+        rationale="Resolve an ambiguous reviewer outcome conservatively.",
+    ) == {"command": "reconcile-reviews"}
+
+    pipeline.execute_evaluation_campaign.assert_called_once_with(
+        workflow_id="workflow-1",
+        campaign_id="campaign-1",
+        task_id="task-1",
+        actor_id="operator-1",
+        idempotency_key="execution-key",
+        prompt_variants=variants,
+        repair_id="repair-1",
+    )
+    pipeline.get_evaluation_execution.assert_called_once_with(
+        "workflow-1", "execution-1", principal_id="operator-1"
+    )
+    pipeline.reconcile_evaluation_execution.assert_called_once_with(
+        workflow_id="workflow-1",
+        execution_id="execution-1",
+        actor_id="operator-1",
+        idempotency_key="reconcile-execution-key",
+        decision=EvaluationReconciliationDecision.MARK_FAILED,
+        rationale="Resolve an ambiguous provider outcome conservatively.",
+    )
+    pipeline.validate_evaluation_execution.assert_called_once_with(
+        workflow_id="workflow-1",
+        execution_id="execution-1",
+        actor_id="operator-1",
+        idempotency_key="validation-key",
+    )
+    pipeline.get_evaluation_assessment.assert_called_once_with(
+        "workflow-1", "assessment-1", principal_id="operator-1"
+    )
+    pipeline.reconcile_evaluation_reviews.assert_called_once_with(
+        workflow_id="workflow-1",
+        assessment_id="assessment-1",
+        actor_id="operator-1",
+        idempotency_key="reconcile-review-key",
+        decision=EvaluationReconciliationDecision.MARK_FAILED,
+        rationale="Resolve an ambiguous reviewer outcome conservatively.",
     )
