@@ -53,6 +53,9 @@ erDiagram
 | `evaluation_observation` | assessment/provider run/campaign, provider/family, model/profile version, capability, success, validation, selection, latency, error | Replay-safe routing evidence from trusted evaluation decisions |
 | `evaluation_review_run` | assessment/artifact/candidate run, reviewer identity/family/model/profile, request and evidence digests, reviewed digest, status, result, usage, latency | Durable independent judgment over an exact candidate artifact |
 | `evaluation_reconciliation` | workflow/campaign, target type/ID, human actor, decision, rationale, affected runs | Immutable fail-closed disposition for ambiguous evaluation calls |
+| `evaluation_repair` | campaign/source batch, source/target iteration, workflow snapshot, failure snapshot, exact prompt variants, human rationale | Bounded authorization for one refinement execution |
+| `evaluation_recovery` | assessment, prior/outcome status, human decision/rationale, affected record IDs | Immutable conservative recovery of interrupted validation/review work |
+| `evaluation_promotion` | campaign/assessment/batch/candidate/artifact digest, workflow snapshot, human rationale | Exact winner designation without merge or deployment authority |
 | `artifact` | attempt, type, URI/reference, digest, size, media type, classification, revision | Validated output/evidence metadata |
 | `finding` | attempt, category, severity, status, evidence, affected digest, disposition | Review/security issue tracked to closure |
 | `approval` | workflow, action, target, revision/digest, policy, human principal, decision, rationale, expiry, consumed time; immutable | Scoped human authorization; unique active approval rules |
@@ -82,6 +85,9 @@ Large prompt/output bodies are not required in the core database. If retained fo
 - At most one direct provider observation exists per attempt, and model/profile versions never share evidence implicitly.
 - One independent review run exists per candidate artifact and reviewer provider; its reviewed digest cannot be replaced by provider prose.
 - One evaluation reconciliation exists per ambiguous target, and the only current disposition is to mark unknown runs failed without replay.
+- One repair plan exists per campaign target iteration, and every execution after iteration one must match it exactly.
+- Recovery history is unique per assessment and interrupted source state; dispatched external reviews become unknown rather than retried.
+- One promotion exists per campaign and must bind the controller-selected winner to the current workflow snapshot.
 - A workflow input disposition is unique, preserves the original signals, and cannot release another block type.
 - An expired running attempt permits at most one human execution reconciliation; retry creates a new task instead of reopening the abandoned attempt.
 - Audit events are inserted, never updated or deleted by application roles.

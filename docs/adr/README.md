@@ -22,5 +22,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0018: Committed, zero-cost evaluation fan-out](0018-committed-zero-cost-evaluation-fanout.md)
 - [ADR-0019: Trusted evaluation artifacts and checks](0019-trusted-evaluation-artifacts-and-checks.md)
 - [ADR-0020: Durable independent evaluation review and reconciliation](0020-durable-independent-evaluation-review.md)
+- [ADR-0021: Bounded evaluation repair, recovery, and promotion](0021-bounded-evaluation-repair-recovery-promotion.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.

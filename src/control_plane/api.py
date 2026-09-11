@@ -29,6 +29,7 @@ from control_plane.evaluation import (
     CandidateEvidence,
     DeterministicCheck,
     EvaluationReconciliationDecision,
+    EvaluationRecoveryDecision,
     IndependentReview,
     PromptVariant,
 )
@@ -239,6 +240,7 @@ class EvaluationBatchCreate(BaseModel):
 
     idempotency_key: str = Field(min_length=8, max_length=128)
     candidates: tuple[EvaluationCandidateCreate, ...] = Field(min_length=1, max_length=64)
+    repair_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class PromptVariantCreate(BaseModel):
@@ -254,6 +256,7 @@ class EvaluationExecutionCreate(BaseModel):
     task_id: str = Field(min_length=1, max_length=64)
     idempotency_key: str = Field(min_length=8, max_length=128)
     prompt_variants: tuple[PromptVariantCreate, ...] = Field(min_length=1, max_length=8)
+    repair_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class EvaluationAssessmentCreate(BaseModel):
@@ -267,6 +270,29 @@ class EvaluationReconciliationCreate(BaseModel):
 
     idempotency_key: str = Field(min_length=8, max_length=128)
     decision: EvaluationReconciliationDecision
+    rationale: str = Field(min_length=1, max_length=2_000)
+
+
+class EvaluationRepairCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    prompt_variants: tuple[PromptVariantCreate, ...] = Field(min_length=1, max_length=8)
+    rationale: str = Field(min_length=1, max_length=2_000)
+
+
+class EvaluationRecoveryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    decision: EvaluationRecoveryDecision
+    rationale: str = Field(min_length=1, max_length=2_000)
+
+
+class EvaluationPromotionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=8, max_length=128)
     rationale: str = Field(min_length=1, max_length=2_000)
 
 
@@ -634,6 +660,7 @@ def create_app(
             actor_id=principal_id,
             idempotency_key=request.idempotency_key,
             candidates=tuple(candidate.to_evidence() for candidate in request.candidates),
+            repair_id=request.repair_id,
         )
 
     @app.post(
@@ -657,6 +684,30 @@ def create_app(
                 PromptVariant(variant.variant_id, variant.instruction)
                 for variant in request.prompt_variants
             ),
+            repair_id=request.repair_id,
+        )
+
+    @app.post(
+        "/workflows/{workflow_id}/evaluation-campaigns/{campaign_id}/repairs",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def plan_evaluation_repair(
+        workflow_id: str,
+        campaign_id: str,
+        request: EvaluationRepairCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.plan_evaluation_repair(
+            workflow_id=workflow_id,
+            campaign_id=campaign_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+            prompt_variants=tuple(
+                PromptVariant(variant.variant_id, variant.instruction)
+                for variant in request.prompt_variants
+            ),
+            rationale=request.rationale,
         )
 
     @app.get("/workflows/{workflow_id}/evaluation-executions/{execution_id}")
@@ -730,6 +781,42 @@ def create_app(
             actor_id=principal_id,
             idempotency_key=request.idempotency_key,
             decision=request.decision,
+            rationale=request.rationale,
+        )
+
+    @app.post("/workflows/{workflow_id}/evaluation-assessments/{assessment_id}/recover")
+    def recover_evaluation_assessment(
+        workflow_id: str,
+        assessment_id: str,
+        request: EvaluationRecoveryCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.recover_evaluation_assessment(
+            workflow_id=workflow_id,
+            assessment_id=assessment_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
+            decision=request.decision,
+            rationale=request.rationale,
+        )
+
+    @app.post(
+        "/workflows/{workflow_id}/evaluation-assessments/{assessment_id}/promotions",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def promote_evaluation_winner(
+        workflow_id: str,
+        assessment_id: str,
+        request: EvaluationPromotionCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.promote_evaluation_winner(
+            workflow_id=workflow_id,
+            assessment_id=assessment_id,
+            actor_id=principal_id,
+            idempotency_key=request.idempotency_key,
             rationale=request.rationale,
         )
 

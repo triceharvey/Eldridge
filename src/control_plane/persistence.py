@@ -213,6 +213,7 @@ class EvaluationBatchRecord(Base):
     actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    repair_id: Mapped[str | None] = mapped_column(String(36), index=True)
     iteration: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     winner_candidate_id: Mapped[str | None] = mapped_column(String(128))
@@ -273,6 +274,7 @@ class EvaluationExecutionRecord(Base):
     actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    repair_id: Mapped[str | None] = mapped_column(ForeignKey("evaluation_repairs.id"), index=True)
     iteration: Mapped[int] = mapped_column(Integer, nullable=False)
     workflow_version: Mapped[int] = mapped_column(Integer, nullable=False)
     candidate_revision: Mapped[str | None] = mapped_column(String(128))
@@ -482,6 +484,90 @@ class EvaluationReconciliationRecord(Base):
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     affected_run_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvaluationRepairRecord(Base):
+    __tablename__ = "evaluation_repairs"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_evaluation_repair_actor_key"),
+        UniqueConstraint("campaign_id", "target_iteration", name="uq_evaluation_repair_iteration"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), nullable=False, index=True)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    source_batch_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_batches.id"), nullable=False
+    )
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_iteration: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_iteration: Mapped[int] = mapped_column(Integer, nullable=False)
+    workflow_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    candidate_revision: Mapped[str | None] = mapped_column(String(128))
+    prompt_variants: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False)
+    failure_snapshot: Mapped[dict[str, list[str]]] = mapped_column(JSON, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvaluationRecoveryRecord(Base):
+    __tablename__ = "evaluation_recoveries"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_evaluation_recovery_actor_key"),
+        UniqueConstraint(
+            "assessment_id", "prior_status", name="uq_evaluation_recovery_assessment_status"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), nullable=False, index=True)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    assessment_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_assessments.id"), nullable=False
+    )
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    prior_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    decision: Mapped[str] = mapped_column(String(64), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    affected_record_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvaluationPromotionRecord(Base):
+    __tablename__ = "evaluation_promotions"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_evaluation_promotion_actor_key"),
+        UniqueConstraint("campaign_id", name="uq_evaluation_promotion_campaign"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), nullable=False, index=True)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    assessment_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_assessments.id"), nullable=False
+    )
+    batch_id: Mapped[str] = mapped_column(ForeignKey("evaluation_batches.id"), nullable=False)
+    candidate_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(ForeignKey("evaluation_artifacts.id"), nullable=False)
+    artifact_digest: Mapped[str] = mapped_column(String(71), nullable=False)
+    workflow_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    candidate_revision: Mapped[str | None] = mapped_column(String(128))
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
