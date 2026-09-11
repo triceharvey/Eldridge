@@ -26,6 +26,14 @@ class EvaluationExecutionStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class EvaluationAssessmentStatus(StrEnum):
+    PREPARED = "PREPARED"
+    RUNNING = "RUNNING"
+    CHECKS_READY = "CHECKS_READY"
+    DECIDED = "DECIDED"
+    FAILED = "FAILED"
+
+
 @dataclass(frozen=True)
 class PromptVariant:
     variant_id: str

@@ -1,0 +1,341 @@
+from __future__ import annotations
+
+from dataclasses import replace
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
+
+from control_plane.api import create_app
+from control_plane.domain import (
+    AuthorizationError,
+    ConflictError,
+    ProviderRequest,
+    ProviderResult,
+    TaskKind,
+)
+from control_plane.evaluation import PromptVariant
+from control_plane.evaluation_validation import (
+    EvaluationArtifact,
+    EvaluationValidator,
+    SecurityBoundaryValidator,
+    ValidationOutcome,
+)
+from control_plane.persistence import (
+    EvaluationAssessmentRecord,
+    EvaluationObservationRecord,
+    Workflow,
+)
+from control_plane.providers import MockProvider
+from control_plane.routing import (
+    CapabilityEvidence,
+    ProviderProfile,
+    RiskLevel,
+    WorkCapability,
+    mock_profiles,
+)
+from control_plane.service import ControlPlaneService, ProviderBinding
+
+
+class CountingProvider(MockProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def submit(self, request: ProviderRequest) -> ProviderResult:
+        self.calls += 1
+        return super().submit(request)
+
+
+class FixedValidator:
+    def __init__(self, name: str, *, passed: bool = True) -> None:
+        self.name = name
+        self.version = f"{name}/test-v1"
+        self.passed = passed
+        self.calls = 0
+
+    def validate(self, artifact: EvaluationArtifact) -> ValidationOutcome:
+        self.calls += 1
+        return ValidationOutcome(self.passed, {"reason": "test_fixture"})
+
+
+class StaticEvidenceStore:
+    def hydrate_profiles(
+        self, _session: Session, profiles: tuple[ProviderProfile, ...]
+    ) -> tuple[ProviderProfile, ...]:
+        return profiles
+
+
+def _setup(
+    service: ControlPlaneService,
+    *,
+    key: str,
+    risk: RiskLevel = RiskLevel.MEDIUM,
+    required_checks: frozenset[str] = frozenset({"schema", "security"}),
+) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    workflow = service.create_workflow(
+        requester_id="dev-operator",
+        title="Trusted evaluation",
+        description="Bind deterministic validation evidence to captured model output.",
+        idempotency_key=f"{key}-workflow",
+        risk=risk,
+    )
+    tasks = workflow["tasks"]
+    assert isinstance(tasks, list)
+    campaign = service.create_evaluation_campaign(
+        workflow_id=str(workflow["id"]),
+        actor_id="dev-operator",
+        idempotency_key=f"{key}-campaign",
+        prompt_contract_version="prompt-v1",
+        work_capability=WorkCapability.PLANNING,
+        required_checks=required_checks,
+    )
+    execution = service.execute_evaluation_campaign(
+        workflow_id=str(workflow["id"]),
+        campaign_id=str(campaign["id"]),
+        task_id=str(tasks[0]["id"]),
+        actor_id="dev-operator",
+        idempotency_key=f"{key}-execution",
+        prompt_variants=(
+            PromptVariant("baseline", "Produce a bounded plan."),
+            PromptVariant("challenge", "Challenge assumptions, then produce a bounded plan."),
+        ),
+    )
+    return workflow, campaign, execution
+
+
+def test_trusted_validation_creates_artifacts_checks_and_campaign_decision(
+    session_factory: sessionmaker[Session],
+) -> None:
+    provider = CountingProvider()
+    bindings = tuple(
+        ProviderBinding(profile=profile, provider=provider) for profile in mock_profiles()
+    )
+    service = ControlPlaneService(session_factory, provider_bindings=bindings)
+    workflow, campaign, execution = _setup(service, key="trusted-success")
+
+    assessment = service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="trusted-success-assessment",
+    )
+    replay = service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="trusted-success-assessment",
+    )
+    stored_campaign = service.get_evaluation_campaign(
+        str(workflow["id"]), str(campaign["id"]), principal_id="dev-operator"
+    )
+
+    assert assessment["status"] == "DECIDED"
+    assert assessment["decision"]["status"] == "WINNER_SELECTED"
+    assert len(assessment["artifacts"]) == 4
+    assert all(len(artifact["checks"]) == 2 for artifact in assessment["artifacts"])
+    assert all(
+        check["passed"] is True
+        and check["evidence_digest"].startswith("sha256:")
+        and check["validated_output_digest"] == artifact["digest"]
+        for artifact in assessment["artifacts"]
+        for check in artifact["checks"]
+    )
+    assert stored_campaign["status"] == "WINNER_SELECTED"
+    assert replay["id"] == assessment["id"]
+    assert replay["replayed"] is True
+    assert replay["decision"]["status"] == "WINNER_SELECTED"
+    assert provider.calls == 4
+    evidence = service.list_provider_evidence(principal_id="dev-operator")
+    assert all(item["evidence"]["PLANNING"]["sample_count"] == 2 for item in evidence)
+    assert all(item["evidence"]["PLANNING"]["validation_pass_rate"] == 1.0 for item in evidence)
+    with service.session_factory() as session:
+        observations = session.scalars(select(EvaluationObservationRecord)).all()
+        assert len(observations) == 4
+        assert sum(item.selected_winner for item in observations) == 1
+
+
+def test_failed_trusted_check_requires_bounded_refinement(
+    session_factory: sessionmaker[Session],
+) -> None:
+    validator = FixedValidator("schema", passed=False)
+    service = ControlPlaneService(
+        session_factory,
+        evaluation_validators=(validator,),
+    )
+    workflow, campaign, execution = _setup(
+        service,
+        key="trusted-failure",
+        required_checks=frozenset({"schema"}),
+    )
+
+    assessment = service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="trusted-failure-assessment",
+    )
+
+    assert assessment["decision"]["status"] == "REFINEMENT_REQUIRED"
+    assert validator.calls == 4
+    stored = service.get_evaluation_campaign(
+        str(workflow["id"]), str(campaign["id"]), principal_id="dev-operator"
+    )
+    assert stored["current_iteration"] == 2
+    assert all(
+        candidate["rejection_reasons"] == ["failed_checks:schema"]
+        for candidate in stored["batches"][0]["candidates"]
+    )
+
+
+def test_missing_validator_stale_snapshot_and_unknown_execution_fail_closed(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = ControlPlaneService(
+        session_factory,
+        evaluation_validators=(FixedValidator("schema"),),
+    )
+    workflow, _campaign, execution = _setup(
+        service,
+        key="missing-validator",
+        required_checks=frozenset({"schema", "security"}),
+    )
+    with pytest.raises(ConflictError, match="not configured: security"):
+        service.validate_evaluation_execution(
+            workflow_id=str(workflow["id"]),
+            execution_id=str(execution["id"]),
+            actor_id="dev-operator",
+            idempotency_key="missing-validator-assessment",
+        )
+    with service.session_factory() as session:
+        assert session.scalar(select(EvaluationAssessmentRecord)) is None
+
+    healthy_service = ControlPlaneService(session_factory)
+    stale_workflow, _stale_campaign, stale_execution = _setup(healthy_service, key="stale-snapshot")
+    with session_factory() as session, session.begin():
+        record = session.get(Workflow, str(stale_workflow["id"]))
+        assert record is not None
+        record.version += 1
+    with pytest.raises(ConflictError, match="snapshot is stale"):
+        healthy_service.validate_evaluation_execution(
+            workflow_id=str(stale_workflow["id"]),
+            execution_id=str(stale_execution["id"]),
+            actor_id="dev-operator",
+            idempotency_key="stale-snapshot-assessment",
+        )
+
+    class TimeoutProvider(MockProvider):
+        def submit(self, request: ProviderRequest) -> ProviderResult:
+            raise TimeoutError("ambiguous")
+
+    unknown_service = ControlPlaneService(
+        session_factory,
+        provider_bindings=tuple(
+            ProviderBinding(profile, TimeoutProvider()) for profile in mock_profiles()
+        ),
+    )
+    unknown_workflow, _unknown_campaign, unknown_execution = _setup(
+        unknown_service, key="unknown-validation"
+    )
+    with pytest.raises(ConflictError, match="requires reconciliation"):
+        unknown_service.validate_evaluation_execution(
+            workflow_id=str(unknown_workflow["id"]),
+            execution_id=str(unknown_execution["id"]),
+            actor_id="dev-operator",
+            idempotency_key="unknown-validation-assessment",
+        )
+
+
+def test_high_risk_cannot_win_without_independent_reviews(
+    session_factory: sessionmaker[Session],
+) -> None:
+    qualified_profiles = tuple(
+        replace(
+            profile,
+            evidence={
+                WorkCapability.PLANNING: CapabilityEvidence(
+                    sample_count=20,
+                    success_rate=1.0,
+                    validation_pass_rate=1.0,
+                )
+            },
+        )
+        for profile in mock_profiles()
+    )
+    service = ControlPlaneService(
+        session_factory,
+        provider_bindings=tuple(
+            ProviderBinding(profile, MockProvider()) for profile in qualified_profiles
+        ),
+        evidence_store=StaticEvidenceStore(),  # type: ignore[arg-type]
+    )
+    workflow, _campaign, execution = _setup(
+        service,
+        key="high-risk-review-gate",
+        risk=RiskLevel.HIGH,
+    )
+
+    assessment = service.validate_evaluation_execution(
+        workflow_id=str(workflow["id"]),
+        execution_id=str(execution["id"]),
+        actor_id="dev-operator",
+        idempotency_key="high-risk-review-assessment",
+    )
+
+    assert assessment["decision"]["status"] == "REFINEMENT_REQUIRED"
+    assert all(
+        reasons == ["insufficient_independent_reviews"]
+        for reasons in assessment["decision"]["rejected_candidates"].values()
+    )
+    with service.session_factory() as session:
+        observations = session.scalars(select(EvaluationObservationRecord)).all()
+        assert observations
+        assert all(item.validation_passed is False for item in observations)
+
+
+def test_validation_is_human_only_and_api_is_replay_safe(
+    service: ControlPlaneService,
+) -> None:
+    workflow, _campaign, execution = _setup(service, key="validation-api")
+    with pytest.raises(AuthorizationError):
+        service.validate_evaluation_execution(
+            workflow_id=str(workflow["id"]),
+            execution_id=str(execution["id"]),
+            actor_id="implementer-agent",
+            idempotency_key="agent-validation-assessment",
+        )
+
+    with TestClient(create_app(service)) as client:
+        response = client.post(
+            f"/workflows/{workflow['id']}/evaluation-executions/{execution['id']}/assessments",
+            headers={"X-Principal-ID": "dev-operator"},
+            json={"idempotency_key": "validation-api-assessment"},
+        )
+        assert response.status_code == 201
+        assessment = response.json()
+        stored = client.get(
+            f"/workflows/{workflow['id']}/evaluation-assessments/{assessment['id']}",
+            headers={"X-Principal-ID": "dev-operator"},
+        )
+
+    assert stored.status_code == 200
+    assert stored.json()["status"] == "DECIDED"
+
+
+def test_security_validator_rejects_sensitive_and_authority_fields() -> None:
+    validator: EvaluationValidator = SecurityBoundaryValidator()
+    artifact = EvaluationArtifact(
+        artifact_id="artifact-1",
+        output={"nested": {"token": "redacted"}, "merge_authorized": True},
+        output_digest="sha256:" + "a" * 64,
+        task_kind=TaskKind.PLAN,
+        workflow_version=1,
+        candidate_revision=None,
+    )
+
+    outcome = validator.validate(artifact)
+
+    assert outcome.passed is False
+    assert outcome.details["forbidden_fields"] == ["token"]
+    assert outcome.details["authority_fields"] == ["merge_authorized"]

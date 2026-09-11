@@ -4,7 +4,12 @@
 
 Continuous improvement means learning which eligible provider performs best for a specific capability under verified conditions. It does not mean letting a model rewrite its own permissions, prompts, policies, tests, routing history, or approval requirements.
 
-The worker now records one append-only provider observation for each routed attempt. The observation is derived from control-plane execution and validation, not from a provider's opinion of its own answer. It includes the provider identity and family, exact model version, profile version, task capability, success, validation result, latency, error class, workflow, task, and attempt.
+The worker records one append-only provider observation for each routed attempt. Trusted evaluation
+assessments also record one observation for each persisted provider run after controller-owned checks
+and the campaign decision complete. Both sources are derived from control-plane execution and
+validation, not from a provider's opinion of its own answer. They include provider identity and
+family, exact model version, profile version, capability, success, validation result, latency, error
+class, and their source workflow and task.
 
 ## Feedback loop
 
@@ -49,13 +54,17 @@ The external egress allowlist is an explicit, versioned runtime policy input and
 
 New provider and model versions should first run against deterministic evaluation fixtures or low-risk work. Promotion to normal routing should require enough representative observations, acceptable security and validation results, cost and latency review, and explicit operator approval. High-risk eligibility follows only after the configured evidence floor is met for the exact required capability.
 
-The current implementation learns from real routed attempts. A later evaluation service should add signed benchmark observations, holdout suites, regression thresholds, drift alerts, and automatic demotion. Automatic promotion is intentionally excluded: evidence may recommend promotion, but an authorized human changes the provider's enabled scope.
+The current implementation learns from routed attempts and trusted evaluation assessments. A later
+evaluation slice should add signed benchmark observations, holdout suites, regression thresholds,
+drift alerts, and automatic demotion. Automatic promotion is intentionally excluded: evidence may
+recommend promotion, but an authorized human changes the provider's enabled scope.
 
 Phase 5.2C adds the committed execution half of that evaluation service for the zero-cost local
 profile. It fans each authorized prompt variant across all eligible local candidates, retains the
 exact workflow and provider snapshot, validates and hashes returned outputs, and refuses blind retry
-after an ambiguous outcome. These captured outputs are not learning evidence until trusted project
-checks and independent review bind their results to the stored output digest.
+after an ambiguous outcome. Phase 5.2D makes only controller-validated, digest-bound assessment
+results eligible as learning evidence. High-risk results remain failed validation observations until
+the required independent review is durably satisfied.
 
 ## Evidence quality and poisoning resistance
 

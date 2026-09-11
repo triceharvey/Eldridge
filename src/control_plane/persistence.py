@@ -319,6 +319,111 @@ class EvaluationProviderRunRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class EvaluationAssessmentRecord(Base):
+    __tablename__ = "evaluation_assessments"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "idempotency_key", name="uq_evaluation_assessment_actor_key"),
+        UniqueConstraint("execution_id", name="uq_evaluation_assessment_execution"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    execution_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_executions.id"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), nullable=False, index=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    batch_id: Mapped[str | None] = mapped_column(ForeignKey("evaluation_batches.id"))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EvaluationArtifactRecord(Base):
+    __tablename__ = "evaluation_artifacts"
+    __table_args__ = (UniqueConstraint("provider_run_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    assessment_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_assessments.id"), nullable=False, index=True
+    )
+    execution_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_executions.id"), nullable=False, index=True
+    )
+    provider_run_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_provider_runs.id"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), nullable=False, index=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    digest: Mapped[str] = mapped_column(String(71), nullable=False)
+    workflow_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    candidate_revision: Mapped[str | None] = mapped_column(String(128))
+    content_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EvaluationCheckRecord(Base):
+    __tablename__ = "evaluation_checks"
+    __table_args__ = (
+        UniqueConstraint("artifact_id", "check_name", name="uq_evaluation_artifact_check"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    assessment_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_assessments.id"), nullable=False, index=True
+    )
+    artifact_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_artifacts.id"), nullable=False, index=True
+    )
+    check_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    validator_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    passed: Mapped[bool | None] = mapped_column(Boolean)
+    evidence_digest: Mapped[str | None] = mapped_column(String(71))
+    validated_output_digest: Mapped[str] = mapped_column(String(71), nullable=False)
+    details_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EvaluationObservationRecord(Base):
+    __tablename__ = "evaluation_observations"
+    __table_args__ = (UniqueConstraint("provider_run_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    assessment_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_assessments.id"), nullable=False, index=True
+    )
+    provider_run_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_provider_runs.id"), nullable=False, index=True
+    )
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_campaigns.id"), nullable=False, index=True
+    )
+    workflow_id: Mapped[str] = mapped_column(ForeignKey("workflows.id"), nullable=False, index=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), nullable=False, index=True)
+    provider_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    provider_family: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    profile_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    work_capability: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    succeeded: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    validation_passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selected_winner: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class CiCheckEvidence(Base):
     __tablename__ = "ci_check_evidence"
     __table_args__ = (

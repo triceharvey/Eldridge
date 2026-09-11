@@ -48,6 +48,13 @@ verification. Negative cases reject production environments, credential-bearing 
 unknown operation types and fields, unbound artifacts, wrong plan digests, expired approvals,
 agent authority, and idempotency-key drift.
 
+Phase 5 acceptance distinguishes deterministic fixtures, local runtime canaries, and live-provider
+evidence. A generated output is not validated evidence until a named, versioned controller-owned
+check stores its own digest and the exact output digest it assessed. A passing deterministic check is
+not an independent model review. Before hosted-production claims or broader scaling work, run one
+explicitly authorized real workflow end to end and retain the provider, prompt contract, artifact,
+validation, review, Git revision, protected-PR, and human-disposition evidence.
+
 ## Critical acceptance cases
 
 | Case | Expected result |

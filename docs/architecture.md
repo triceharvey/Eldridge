@@ -22,6 +22,11 @@ Use a modular monolith for the MVP. It provides clear internal boundaries withou
 
 PostgreSQL provides transactions, constraints, task leasing, state, and audit storage. A database-backed queue avoids an early Redis dependency and preserves the relationship between state transitions and emitted events in one transaction.
 
+The current `ControlPlaneService` is a transitional application facade and has accumulated workflow,
+evaluation, Git, deployment, and recovery orchestration. Splitting those responsibilities into tested
+domain services is a pre-production maintainability gate. This is an internal modular-monolith
+refactor, not justification for network services or new infrastructure.
+
 ## Component model
 
 ```mermaid
