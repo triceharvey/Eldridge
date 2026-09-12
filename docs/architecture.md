@@ -37,9 +37,13 @@ proposal and reconciliation, readiness assessment, and authoritative merge confi
 composed `GitPullRequestService`; successful confirmation still uses the workflow component's
 canonical state transition. Phase 5.3F moves environment policy, immutable deployment planning,
 credential-broker execution, verification, rollback, and failure containment into a composed
-`DeploymentRecoveryService`; it also uses the canonical workflow transition operation. Integration
-responsibilities still require a tested domain boundary before production. These are internal
-modular-monolith refactors, not justification for network services or new infrastructure.
+`DeploymentRecoveryService`; it also uses the canonical workflow transition operation. Phase 5.3G
+moves Windsurf repository claims, task-scoped leases, handoff serialization, and
+Git-verified implementation evidence into a composed `WindsurfIntegrationService`. It reuses the
+workflow component's canonical lease and transition rules. The primary domain decomposition is now
+complete; the facade retains only stable delegation, shared reads, and compatibility helpers. These
+are internal modular-monolith refactors, not justification for network services or new
+infrastructure.
 
 ## Component model
 

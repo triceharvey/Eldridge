@@ -109,8 +109,9 @@ are split. Phase 5.3E extracted the GitHub CI, pull-request, readiness, and auth
 merge-confirmation lifecycle behind a tested `GitPullRequestService` without adding merge authority.
 Phase 5.3F extracted environment policy, immutable deployment plans, credential-broker execution,
 verification, rollback, and failure containment behind a tested `DeploymentRecoveryService`.
-Integration remains the last internal boundary. Eldridge will not proceed into broad Phase 6
-infrastructure before that boundary is reviewable and one explicitly
+Phase 5.3G completed the primary domain decomposition by extracting repository-bound Windsurf task
+claims, scoped leases, handoff artifacts, and Git-verified evidence behind a tested
+`WindsurfIntegrationService`. Eldridge will not proceed into broad Phase 6 infrastructure before one explicitly
 authorized real engineering workflow completes generation, validation, review, protected PR, and
 human disposition. The USD 0 default remains in force; paid-provider proof requires a separate budget
 and egress authorization.
