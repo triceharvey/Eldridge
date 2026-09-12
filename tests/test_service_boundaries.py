@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+from control_plane.deployment import EnvironmentClassification
 from control_plane.domain import (
     ApprovalAction,
     ApprovalDecision,
@@ -454,3 +455,97 @@ def test_git_pull_request_commands_delegate_without_changing_the_facade(
         idempotency_key="confirmation-key",
     )
     git.list_merge_confirmations.assert_called_once_with("workflow-1", principal_id="operator-1")
+
+
+def test_deployment_recovery_commands_delegate_without_changing_the_facade(
+    service: ControlPlaneService,
+) -> None:
+    deployment = Mock()
+    deployment.register_deployment_environment.return_value = {"command": "register"}
+    deployment.list_deployment_environments.return_value = [{"query": "environment"}]
+    deployment.create_deployment_plan.return_value = {"command": "plan"}
+    deployment.list_deployment_plans.return_value = [{"query": "plan"}]
+    deployment.execute_deployment_dry_run.return_value = {"command": "dry-run"}
+    deployment.execute_local_deployment.return_value = {"command": "deploy"}
+    deployment.list_deployment_attempts.return_value = [{"query": "attempt"}]
+    deployment.execute_local_rollback.return_value = {"command": "rollback"}
+    deployment.list_deployment_rollbacks.return_value = [{"query": "rollback"}]
+    service.deployment_recovery = deployment
+
+    environment_args = {
+        "actor_id": "operator-1",
+        "environment_id": "development",
+        "name": "Local development",
+        "classification": EnvironmentClassification.DEVELOPMENT,
+        "repository": "owner/repository",
+        "base_branch": "main",
+        "resource_scope": ("deployment/app",),
+        "required_checks": ("test",),
+        "required_attestations": ("image",),
+        "verification_policy": ("rollout",),
+        "rollback_policy": "previous-release",
+        "policy_version": "deployment/test-v1",
+        "provider": "local-k3d",
+        "account_scope": "local",
+        "region": "local",
+        "adapter_id": "local-k3d-v1",
+    }
+    assert service.register_deployment_environment(**environment_args) == {"command": "register"}
+    assert service.list_deployment_environments(principal_id="operator-1") == [
+        {"query": "environment"}
+    ]
+
+    plan_args = {
+        "workflow_id": "workflow-1",
+        "actor_id": "operator-1",
+        "environment_id": "development",
+        "artifact_digests": ("sha256:" + "a" * 64,),
+        "operations": ({"resource_id": "deployment/app"},),
+        "declared_impact": "Update the local deployment.",
+        "verification_probes": ("rollout",),
+        "rollback_reference": "previous-release",
+        "idempotency_key": "plan-key",
+    }
+    assert service.create_deployment_plan(**plan_args) == {"command": "plan"}
+    assert service.list_deployment_plans("workflow-1", principal_id="operator-1") == [
+        {"query": "plan"}
+    ]
+
+    execution_args = {
+        "workflow_id": "workflow-1",
+        "plan_id": "plan-1",
+        "actor_id": "operator-1",
+        "idempotency_key": "execution-key",
+    }
+    assert service.execute_deployment_dry_run(**execution_args) == {"command": "dry-run"}
+    assert service.execute_local_deployment(**execution_args) == {"command": "deploy"}
+    assert service.list_deployment_attempts("workflow-1", principal_id="operator-1") == [
+        {"query": "attempt"}
+    ]
+
+    rollback_args = {
+        "workflow_id": "workflow-1",
+        "attempt_id": "attempt-1",
+        "actor_id": "operator-1",
+        "idempotency_key": "rollback-key",
+    }
+    assert service.execute_local_rollback(**rollback_args) == {"command": "rollback"}
+    assert service.list_deployment_rollbacks("workflow-1", principal_id="operator-1") == [
+        {"query": "rollback"}
+    ]
+
+    deployment.register_deployment_environment.assert_called_once_with(**environment_args)
+    deployment.list_deployment_environments.assert_called_once_with(principal_id="operator-1")
+    deployment.create_deployment_plan.assert_called_once_with(**plan_args)
+    deployment.list_deployment_plans.assert_called_once_with(
+        "workflow-1", principal_id="operator-1"
+    )
+    deployment.execute_deployment_dry_run.assert_called_once_with(**execution_args)
+    deployment.execute_local_deployment.assert_called_once_with(**execution_args)
+    deployment.list_deployment_attempts.assert_called_once_with(
+        "workflow-1", principal_id="operator-1"
+    )
+    deployment.execute_local_rollback.assert_called_once_with(**rollback_args)
+    deployment.list_deployment_rollbacks.assert_called_once_with(
+        "workflow-1", principal_id="operator-1"
+    )
