@@ -72,6 +72,7 @@ class MockProvider:
                 "change_summary": "deterministic mock change artifact",
                 "candidate_revision": f"mock-{digest[:40]}",
                 "commands_requested": [],
+                "tool_requests": [],
             }
         if request.task_kind == TaskKind.TEST:
             return common | {"tests_passed": True, "test_count": 1, "failures": []}

@@ -18,6 +18,10 @@ Code subscription paths. The subscription adapter verifies `claude.ai` authentic
 API-key and alternate-cloud overrides, exposes no tools or repository, and consumes shared plan
 allowance rather than a separately approved API budget.
 
+Subscription policy defines separate ceilings for one evaluation execution and one multi-stage
+workflow. A provider that exhausts the workflow ceiling becomes routing-ineligible for later tasks;
+only another independently configured and policy-eligible provider may continue the workflow.
+
 Devin activation currently exposes only its bounded remote-session lifecycle: create, poll, and cancel with repository scope, tags, a maximum ACU limit, and optional structured-output schema. It is not placed in the normal task-provider routing pool yet. Phase 3 must first ingest Devin's commit or pull-request revision and independently validate its CI evidence; otherwise a remote result could bypass the same revision-bound controls applied to local worktrees.
 
 Every routing record stores both the capability-router version and provider-activation policy version. This makes later evidence and incident review attributable to the exact configured policy.

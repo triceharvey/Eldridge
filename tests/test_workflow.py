@@ -1,10 +1,22 @@
 from sqlalchemy import select
 
 from control_plane.audit import verify_audit_chain
-from control_plane.domain import ApprovalAction, ApprovalDecision
+from control_plane.domain import ApprovalAction, ApprovalDecision, ProviderRequest, ProviderResult
 from control_plane.persistence import Artifact, CapabilityGrant, Task, Workflow
-from control_plane.service import ControlPlaneService
+from control_plane.providers import MockProvider
+from control_plane.routing import mock_profiles
+from control_plane.service import ControlPlaneService, ProviderBinding
 from tests.conftest import drive_to_human_gate
+
+
+class CapturingMockProvider(MockProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[ProviderRequest] = []
+
+    def submit(self, request: ProviderRequest) -> ProviderResult:
+        self.requests.append(request)
+        return super().submit(request)
 
 
 def test_full_workflow_reaches_human_gate_with_bound_evidence(
@@ -39,6 +51,32 @@ def test_full_workflow_reaches_human_gate_with_bound_evidence(
         ).all()
         assert grants and all(not grant.active for grant in grants)
         assert verify_audit_chain(session, str(workflow["id"]))
+
+
+def test_reviewers_receive_digest_bound_producer_output(session_factory) -> None:
+    producer = CapturingMockProvider()
+    reviewer = CapturingMockProvider()
+    profiles = mock_profiles()
+    service = ControlPlaneService(
+        session_factory,
+        provider_bindings=(
+            ProviderBinding(profiles[0], producer),
+            ProviderBinding(profiles[1], reviewer),
+        ),
+    )
+
+    drive_to_human_gate(service)
+
+    review_requests = [
+        request
+        for request in reviewer.requests
+        if request.task_kind.value in {"ARCHITECTURE_REVIEW", "SECURITY_REVIEW", "CODE_REVIEW"}
+    ]
+    assert len(review_requests) == 3
+    for request in review_requests:
+        assert isinstance(request.context["producer_output"], dict)
+        digest = request.context["producer_output_digest"]
+        assert isinstance(digest, str) and digest.startswith("sha256:")
 
 
 def test_human_can_approve_exact_revision(service: ControlPlaneService) -> None:

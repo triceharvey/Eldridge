@@ -131,6 +131,14 @@ enforces a per-execution invocation ceiling. This closes the model-to-validation
 but it deliberately does not claim repository-aware code generation or protected PR creation. Phase
 5.4C is the narrowly scoped real engineering workflow and protected-PR slice.
 
+Phase 5.4C completed that documentation-only repository proof. Claude produced a schema-constrained
+typed write proposal from one allowlisted public repository file under a two-invocation workflow
+ceiling. A digest-pinned local Qwen model handled the independent review stages, the networkless
+non-root Docker executor applied only the single authorized path in an isolated worktree, and the
+controller recorded the real candidate revision. After all six stages succeeded, a human approved
+that exact revision and opened protected pull request 21. This proves the core end-to-end engineering
+loop at low risk; general code-generation qualification and hosted operation remain separate work.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.

@@ -17,6 +17,7 @@ from control_plane.routing import (
     DataClassification,
     EgressBoundary,
     ExecutionMode,
+    FundingMode,
     ProviderProfile,
     RiskLevel,
     WorkCapability,
@@ -98,8 +99,68 @@ def test_failed_provider_evidence_changes_retry_route(session_factory) -> None:
             "quality_utility",
             "cost_utility",
             "latency_utility",
+            "funding_mode",
+            "max_invocations_per_workflow",
         }
         assert all(route.workflow_id == workflow["id"] for route in routes)
+
+
+def test_subscription_workflow_ceiling_routes_later_work_to_local_provider(
+    session_factory,
+) -> None:
+    subscription = replace(
+        provider_profile("a-subscription", "external-family"),
+        execution_mode=ExecutionMode.MODEL,
+        capabilities=frozenset({WorkCapability.PLANNING, WorkCapability.CODE_GENERATION}),
+        egress_boundary=EgressBoundary.APPROVED_EXTERNAL,
+        maximum_data_classification=DataClassification.PUBLIC,
+        maximum_risk=RiskLevel.LOW,
+        funding_mode=FundingMode.SUBSCRIPTION,
+        max_invocations_per_execution=1,
+        max_invocations_per_workflow=1,
+    )
+    local = provider_profile("b-local", "local-family")
+    service = ControlPlaneService(
+        session_factory,
+        provider_bindings=(
+            ProviderBinding(subscription, MockProvider()),
+            ProviderBinding(local, MockProvider()),
+        ),
+        allowed_egress=frozenset({EgressBoundary.LOCAL, EgressBoundary.APPROVED_EXTERNAL}),
+    )
+    workflow = service.create_workflow(
+        requester_id="dev-operator",
+        title="Bounded subscription workflow",
+        description="Use one subscription call, then continue locally.",
+        idempotency_key="bounded-subscription-workflow",
+        risk=RiskLevel.LOW,
+        data_classification=DataClassification.PUBLIC,
+    )
+
+    for _ in range(3):
+        task = service.lease_next_task(worker_id="orchestrator")
+        assert task is not None
+        result = service.execute_leased_task(
+            task_id=task["id"],
+            lease_token=task["lease_token"],
+            worker_id="orchestrator",
+        )
+        assert result["status"] == "SUCCEEDED"
+
+    with service.session_factory() as session:
+        routes = session.scalars(
+            select(RoutingRecord)
+            .where(RoutingRecord.workflow_id == workflow["id"])
+            .order_by(RoutingRecord.created_at)
+        ).all()
+        assert [route.selected_provider_id for route in routes] == [
+            "a-subscription",
+            "b-local",
+            "b-local",
+        ]
+        assert routes[2].rejected_candidates["a-subscription"] == [
+            "subscription_invocation_ceiling_exhausted"
+        ]
 
 
 def test_model_version_change_does_not_inherit_observations(service) -> None:
