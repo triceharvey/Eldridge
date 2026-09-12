@@ -3,6 +3,78 @@ from typing import Any
 from control_plane.domain import ProviderResult, TaskKind, ValidationError
 
 
+def provider_output_contract(task_kind: TaskKind) -> str:
+    contracts = {
+        TaskKind.PLAN: "Required keys: plan (array) and assumptions (array).",
+        TaskKind.ARCHITECTURE_REVIEW: (
+            "Required keys: findings (array) and independent_review (literal true)."
+        ),
+        TaskKind.IMPLEMENT: (
+            "Required keys: commands_requested (array) and candidate_revision (string)."
+        ),
+        TaskKind.TEST: "Required keys: tests_passed (literal true) and failures (array).",
+        TaskKind.SECURITY_REVIEW: (
+            "Required keys: policy_passed (literal true) and findings (array)."
+        ),
+        TaskKind.CODE_REVIEW: (
+            "Required keys: review_passed (boolean) and blocking_findings (array)."
+        ),
+    }
+    return contracts[task_kind]
+
+
+def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
+    array = {"type": "array", "items": {"type": "string"}}
+    schemas: dict[TaskKind, dict[str, Any]] = {
+        TaskKind.PLAN: {
+            "type": "object",
+            "properties": {"plan": array, "assumptions": array},
+            "required": ["plan", "assumptions"],
+            "additionalProperties": False,
+        },
+        TaskKind.ARCHITECTURE_REVIEW: {
+            "type": "object",
+            "properties": {
+                "findings": array,
+                "independent_review": {"const": True},
+            },
+            "required": ["findings", "independent_review"],
+            "additionalProperties": False,
+        },
+        TaskKind.IMPLEMENT: {
+            "type": "object",
+            "properties": {
+                "commands_requested": array,
+                "candidate_revision": {"type": "string"},
+            },
+            "required": ["commands_requested", "candidate_revision"],
+            "additionalProperties": False,
+        },
+        TaskKind.TEST: {
+            "type": "object",
+            "properties": {"tests_passed": {"const": True}, "failures": array},
+            "required": ["tests_passed", "failures"],
+            "additionalProperties": False,
+        },
+        TaskKind.SECURITY_REVIEW: {
+            "type": "object",
+            "properties": {"policy_passed": {"const": True}, "findings": array},
+            "required": ["policy_passed", "findings"],
+            "additionalProperties": False,
+        },
+        TaskKind.CODE_REVIEW: {
+            "type": "object",
+            "properties": {
+                "review_passed": {"type": "boolean"},
+                "blocking_findings": array,
+            },
+            "required": ["review_passed", "blocking_findings"],
+            "additionalProperties": False,
+        },
+    }
+    return schemas[task_kind]
+
+
 def validate_provider_result(task_kind: TaskKind, result: ProviderResult) -> None:
     if result.status != "SUCCEEDED" or not isinstance(result.output, dict):
         raise ValidationError("provider did not return a successful structured result")

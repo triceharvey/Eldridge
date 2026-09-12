@@ -122,6 +122,15 @@ invocation boundary only. The next slice is a narrowly scoped repository-aware w
 input, writable paths, provider roles, plan allowance, deterministic checks, and independent reviewer
 are approved before execution.
 
+Phase 5.4B completed the first real cross-family evaluation chain: one policy-bounded Claude Code
+subscription invocation produced a schema-constrained plan from supplied public context; deterministic
+schema, security, and revision-binding checks admitted its exact digest; a manifest-pinned local Qwen
+reviewer independently approved that digest; and a human command promoted it. Metered external
+providers remain prohibited at the zero-dollar ceiling, while subscription routing now records and
+enforces a per-execution invocation ceiling. This closes the model-to-validation-to-review proof gap,
+but it deliberately does not claim repository-aware code generation or protected PR creation. Phase
+5.4C is the narrowly scoped real engineering workflow and protected-PR slice.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.

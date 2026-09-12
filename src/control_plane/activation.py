@@ -21,6 +21,7 @@ from control_plane.providers import (
 from control_plane.routing import (
     DataClassification,
     EgressBoundary,
+    FundingMode,
     RiskLevel,
     interoperability_profiles,
     mock_profiles,
@@ -90,6 +91,7 @@ class ClaudeCodeActivation(BaseModel):
     timeout_seconds: float = Field(default=120, gt=0, le=600)
     maximum_data_classification: DataClassification = DataClassification.PUBLIC
     maximum_risk: RiskLevel = RiskLevel.LOW
+    max_invocations_per_execution: int = Field(default=1, ge=1, le=8)
 
     @field_validator("maximum_data_classification", "maximum_risk", mode="before")
     @classmethod
@@ -286,6 +288,8 @@ def activate_integrations(
             profile_version=policy.policy_version,
             maximum_data_classification=claude_code.maximum_data_classification,
             maximum_risk=claude_code.maximum_risk,
+            funding_mode=FundingMode.SUBSCRIPTION,
+            max_invocations_per_execution=claude_code.max_invocations_per_execution,
         )
         bindings.append(ProviderBinding(profile=profile, provider=claude_code_provider))
 

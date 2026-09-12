@@ -130,6 +130,7 @@ def test_claude_code_activation_requires_egress_and_subscription_health(
     assert profile.provider_family == "anthropic"
     assert profile.maximum_data_classification is DataClassification.PUBLIC
     assert profile.maximum_risk is RiskLevel.LOW
+    assert profile.max_invocations_per_execution == 1
     assert EgressBoundary.APPROVED_EXTERNAL in activated.allowed_egress
 
 
