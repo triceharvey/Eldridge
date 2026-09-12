@@ -240,6 +240,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 5.3B evaluation pipeline boundary acceptance](docs/phase-5-3b-acceptance.md)
 - [Phase 5.3C evaluation campaign and read-model acceptance](docs/phase-5-3c-acceptance.md)
 - [Phase 5.3D workflow and task boundary acceptance](docs/phase-5-3d-acceptance.md)
+- [Phase 5.3E Git and protected pull-request boundary acceptance](docs/phase-5-3e-acceptance.md)
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)
