@@ -51,6 +51,24 @@ for value in targets:
         compile(path.read_text(encoding='utf-8'), str(path.relative_to(root)), 'exec')
 """.strip()
 
+UNITTEST_SCRIPT = """
+from pathlib import Path
+import sys
+import unittest
+root = Path('/workspace').resolve()
+tests_root = root / 'tests'
+sys.path.insert(0, str(root / 'src'))
+suite = unittest.TestSuite()
+loader = unittest.TestLoader()
+for value in sys.argv[1:]:
+    target = (root / value).resolve()
+    if tests_root not in target.parents or target.suffix != '.py':
+        raise SystemExit('unsafe unittest target')
+    suite.addTests(loader.discover(str(target.parent), pattern=target.name))
+result = unittest.TextTestRunner(verbosity=2).run(suite)
+raise SystemExit(0 if result.wasSuccessful() else 1)
+""".strip()
+
 
 def _default_user() -> str:
     uid = os.getuid()
@@ -177,6 +195,8 @@ class DockerSandboxExecutor:
         if request.name == ToolName.PYTHON_COMPILE:
             targets = request.targets or (".",)
             return ("python", "-I", "-c", COMPILE_SCRIPT, *targets), False
+        if request.name == ToolName.PYTHON_UNITTEST:
+            return ("python", "-I", "-c", UNITTEST_SCRIPT, *request.targets), False
         if request.name == ToolName.WRITE_TEXT_FILE:
             assert request.path is not None and request.content is not None
             if not self._path_is_writable(request.path):

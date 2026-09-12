@@ -107,3 +107,22 @@ def test_hardened_container_runs_allowlisted_tools(tmp_path: Path) -> None:
     )
     assert write_result.status == "SUCCEEDED"
     assert (source / "generated.py").read_text(encoding="utf-8") == "generated = True\n"
+
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_generated.py").write_text(
+        "import unittest\n\n"
+        "class GeneratedTest(unittest.TestCase):\n"
+        "    def test_value(self):\n"
+        "        self.assertEqual(1 + 1, 2)\n",
+        encoding="utf-8",
+    )
+    unittest_result = executor.execute(
+        workspace=tmp_path,
+        request=ToolRequest(
+            name=ToolName.PYTHON_UNITTEST,
+            targets=("tests/test_generated.py",),
+        ),
+    )
+    assert unittest_result.status == "SUCCEEDED"
+    assert "OK" in unittest_result.stderr
