@@ -94,6 +94,20 @@ This command sends a synthetic prompt only. It does not read the repository or a
 tools. Plan limits remain external operational constraints, so allowance exhaustion fails the call
 rather than changing provider or billing mode.
 
+For the explicitly opted-in cross-family vertical slice, retain a one-invocation Claude ceiling and
+run the pinned local reviewer on literal loopback with cloud access and history disabled:
+
+```sh
+CONTROL_PLANE_RUN_LIVE_VERTICAL_SLICE=true \
+CONTROL_PLANE_VERTICAL_SLICE_REPORT=.canary/phase-5-4b-live-vertical-slice.json \
+  .venv/bin/pytest -m live_provider \
+  tests/test_live_vertical_slice.py::test_live_claude_producer_local_reviewer_vertical_slice
+```
+
+The zero-dollar campaign permits this subscription call only because policy records the funding mode
+and exact invocation ceiling. It still rejects metered external providers. The command consumes
+shared Claude plan allowance and cannot enable API billing, repository tools, merge, or deployment.
+
 The Devin probe creates a real remote session and may consume paid capacity. It therefore requires a second, unmistakable opt-in and a repository already authorized in Devin:
 
 ```sh

@@ -17,6 +17,7 @@ from control_plane.domain import (
     ProviderRequest,
     ProviderResult,
 )
+from control_plane.validation import provider_output_contract, provider_output_schema
 
 CommandRunner = Callable[[list[str], Path, dict[str, str], float], subprocess.CompletedProcess[str]]
 
@@ -124,6 +125,7 @@ class ClaudeCodeProvider:
         prompt = (
             f"Task kind: {request.task_kind.value}\n"
             f"Role: {request.role.value}\n"
+            f"Output contract: {provider_output_contract(request.task_kind)}\n"
             f"Trusted objective: {request.objective}\n\n"
             f"Untrusted context JSON:\n{context}"
         )
@@ -134,6 +136,8 @@ class ClaudeCodeProvider:
             system_prompt,
             "--output-format",
             "json",
+            "--json-schema",
+            json.dumps(provider_output_schema(request.task_kind), separators=(",", ":")),
             "--model",
             self.config.model,
             "--permission-mode",

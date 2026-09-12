@@ -11,7 +11,7 @@ from control_plane.domain import AuthorizationError, ConflictError, ProviderRequ
 from control_plane.evaluation import PromptVariant
 from control_plane.persistence import EvaluationProviderRunRecord
 from control_plane.providers import MockProvider
-from control_plane.routing import EgressBoundary, WorkCapability, mock_profiles
+from control_plane.routing import EgressBoundary, FundingMode, WorkCapability, mock_profiles
 from control_plane.service import ControlPlaneService, ProviderBinding
 
 
@@ -188,6 +188,55 @@ def test_zero_cost_execution_excludes_external_egress(
             actor_id="dev-operator",
             idempotency_key="external-denied-execution",
             prompt_variants=(_variants()[0],),
+        )
+
+
+def test_zero_cost_execution_allows_only_bounded_subscription_invocations(
+    session_factory: sessionmaker[Session],
+) -> None:
+    subscription_profile = replace(
+        mock_profiles()[0],
+        provider_id="subscription-provider",
+        provider_family="subscription-family",
+        egress_boundary=EgressBoundary.APPROVED_EXTERNAL,
+        funding_mode=FundingMode.SUBSCRIPTION,
+        max_invocations_per_execution=1,
+    )
+    service = ControlPlaneService(
+        session_factory,
+        provider_bindings=(ProviderBinding(subscription_profile, MockProvider()),),
+        allowed_egress=frozenset({EgressBoundary.LOCAL, EgressBoundary.APPROVED_EXTERNAL}),
+    )
+    workflow, campaign = _workflow_and_campaign(service, key="subscription-bounded")
+
+    execution = service.execute_evaluation_campaign(
+        workflow_id=str(workflow["id"]),
+        campaign_id=str(campaign["id"]),
+        task_id=_task_id(workflow),
+        actor_id="dev-operator",
+        idempotency_key="subscription-bounded-execution",
+        prompt_variants=(_variants()[0],),
+    )
+
+    assert execution["status"] == "OUTPUTS_READY"
+    selected = execution["routing_snapshot"]["selected"]
+    assert selected[0]["funding_mode"] == "SUBSCRIPTION"
+    assert selected[0]["max_invocations_per_execution"] == 1
+    assert [item["provider_id"] for item in execution["routing_snapshot"]["selected"]] == [
+        "subscription-provider"
+    ]
+
+    second_workflow, second_campaign = _workflow_and_campaign(
+        service, key="subscription-over-limit"
+    )
+    with pytest.raises(ConflictError, match="no policy-eligible providers"):
+        service.execute_evaluation_campaign(
+            workflow_id=str(second_workflow["id"]),
+            campaign_id=str(second_campaign["id"]),
+            task_id=_task_id(second_workflow),
+            actor_id="dev-operator",
+            idempotency_key="subscription-over-limit-execution",
+            prompt_variants=_variants(),
         )
 
 

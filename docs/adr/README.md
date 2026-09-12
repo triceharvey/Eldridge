@@ -31,5 +31,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0027: Extract the controlled deployment and recovery boundary](0027-deployment-recovery-boundary.md)
 - [ADR-0028: Extract the Windsurf integration boundary](0028-windsurf-integration-boundary.md)
 - [ADR-0029: Add a subscription-backed Claude Code provider](0029-subscription-backed-claude-code-provider.md)
+- [ADR-0030: Permit bounded subscription evaluation at the zero-dollar ceiling](0030-bounded-subscription-evaluation.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.

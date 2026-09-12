@@ -20,7 +20,8 @@
     "model": "sonnet",
     "timeout_seconds": 120,
     "maximum_data_classification": "PUBLIC",
-    "maximum_risk": "LOW"
+    "maximum_risk": "LOW",
+    "max_invocations_per_execution": 1
   },
   "local_model": {
     "enabled": false,

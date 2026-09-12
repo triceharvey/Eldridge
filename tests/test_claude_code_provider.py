@@ -83,6 +83,9 @@ def test_claude_code_uses_subscription_auth_without_tools_or_repository_access(
     assert result.usage == {"input_tokens": 12, "output_tokens": 7}
     command = calls[1][0]
     assert command[command.index("--tools") + 1] == ""
+    schema = json.loads(command[command.index("--json-schema") + 1])
+    assert schema["required"] == ["plan", "assumptions"]
+    assert schema["additionalProperties"] is False
     assert "--system-prompt" in command
     assert "--safe-mode" in command
     assert "--no-session-persistence" in command

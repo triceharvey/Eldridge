@@ -9,7 +9,8 @@ providers and privileged integrations remain disabled by default.
 
 **Evidence scope:** “Verified” in this repository always means the scope named by the associated
 acceptance record: deterministic tests, PostgreSQL integration, a local k3d exercise, or an explicitly
-identified live integration. It does not imply hosted-production validation. Eldridge is intentionally
+identified live integration. Phase 5.4B includes one real Claude-to-local-Qwen evaluation,
+independent-review, and exact-digest promotion chain; it does not imply hosted-production validation. Eldridge is intentionally
 AI-assisted and dogfoods agent-generated implementation and documentation, while human decisions,
 protected pull requests, independent CI, and explicit evidence boundaries remain the authority.
 
@@ -244,6 +245,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 5.3F controlled deployment and recovery boundary acceptance](docs/phase-5-3f-acceptance.md)
 - [Phase 5.3G Windsurf integration boundary acceptance](docs/phase-5-3g-acceptance.md)
 - [Phase 5.4A subscription-backed Claude qualification acceptance](docs/phase-5-4a-acceptance.md)
+- [Phase 5.4B real multi-model vertical-slice acceptance](docs/phase-5-4b-acceptance.md)
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)

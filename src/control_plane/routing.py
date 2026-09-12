@@ -36,6 +36,12 @@ class CostTier(IntEnum):
     HIGH = 2
 
 
+class FundingMode(StrEnum):
+    LOCAL = "LOCAL"
+    SUBSCRIPTION = "SUBSCRIPTION"
+    METERED = "METERED"
+
+
 class WorkCapability(StrEnum):
     PLANNING = "PLANNING"
     ARCHITECTURE = "ARCHITECTURE"
@@ -129,6 +135,20 @@ class ProviderProfile:
     enabled: bool = False
     healthy: bool = False
     evidence: dict[WorkCapability, CapabilityEvidence] = field(default_factory=dict)
+    funding_mode: FundingMode = FundingMode.METERED
+    max_invocations_per_execution: int = 0
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.max_invocations_per_execution, bool)
+            or self.max_invocations_per_execution < 0
+        ):
+            raise ValueError("max_invocations_per_execution must be a nonnegative integer")
+        if (
+            self.funding_mode is not FundingMode.SUBSCRIPTION
+            and self.max_invocations_per_execution != 0
+        ):
+            raise ValueError("only subscription providers may define an invocation ceiling")
 
 
 @dataclass(frozen=True)
@@ -305,6 +325,7 @@ def interoperability_profiles() -> tuple[ProviderProfile, ...]:
             maximum_data_classification=DataClassification.RESTRICTED,
             cost_tier=CostTier.LOW,
             model_version="operator-configured",
+            funding_mode=FundingMode.LOCAL,
         ),
         ProviderProfile(
             provider_id="anthropic-claude",
@@ -325,6 +346,7 @@ def interoperability_profiles() -> tuple[ProviderProfile, ...]:
             maximum_data_classification=DataClassification.INTERNAL,
             cost_tier=CostTier.LOW,
             model_version="operator-configured",
+            funding_mode=FundingMode.SUBSCRIPTION,
         ),
         ProviderProfile(
             provider_id="devin",
@@ -376,6 +398,7 @@ def mock_profiles() -> tuple[ProviderProfile, ...]:
         "model_version": "deterministic-mock-v1",
         "enabled": True,
         "healthy": True,
+        "funding_mode": FundingMode.LOCAL,
     }
     return (
         ProviderProfile(provider_id="mock-producer", **common),  # type: ignore[arg-type]

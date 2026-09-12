@@ -1,3 +1,7 @@
+from dataclasses import replace
+
+import pytest
+
 from control_plane.routing import (
     CapabilityEvidence,
     CapabilityRouter,
@@ -5,6 +9,7 @@ from control_plane.routing import (
     DataClassification,
     EgressBoundary,
     ExecutionMode,
+    FundingMode,
     ProviderProfile,
     RiskLevel,
     RoutingObjective,
@@ -229,6 +234,19 @@ def test_duplicate_provider_ids_are_rejected_as_ambiguous_configuration() -> Non
         assert str(exc) == "provider_id values must be unique"
     else:
         raise AssertionError("ambiguous provider configuration was accepted")
+
+
+def test_only_subscription_profiles_may_define_an_invocation_ceiling() -> None:
+    with pytest.raises(ValueError, match="only subscription providers"):
+        replace(profile("metered"), max_invocations_per_execution=1)
+
+    subscription = replace(
+        profile("subscription"),
+        funding_mode=FundingMode.SUBSCRIPTION,
+        max_invocations_per_execution=1,
+    )
+
+    assert subscription.max_invocations_per_execution == 1
 
 
 def test_interoperability_profiles_are_descriptive_and_disabled_by_default() -> None:

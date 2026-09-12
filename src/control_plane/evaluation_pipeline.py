@@ -69,6 +69,7 @@ from control_plane.routing import (
     CapabilityRouter,
     DataClassification,
     EgressBoundary,
+    FundingMode,
     ProviderProfile,
     RiskLevel,
     RoutingObjective,
@@ -329,17 +330,34 @@ class EvaluationPipelineService:
             )
             routing = self.router.route(routing_request, profiles)
             profiles_by_id = {profile.provider_id: profile for profile in profiles}
-            # The accepted Phase 4.2 ceiling is zero. External egress is never
-            # eligible for this execution slice, even if globally configured.
+            # The Phase 4.2 monetary ceiling remains zero. A separately approved
+            # subscription may consume bounded plan allowance but cannot enable a
+            # metered provider or exceed its per-execution invocation ceiling.
             zero_cost_rejections = {
-                candidate.provider_id: ["zero_cost_execution_requires_local_egress"]
+                candidate.provider_id: [
+                    (
+                        "subscription_invocation_ceiling_exceeded"
+                        if profiles_by_id[candidate.provider_id].funding_mode
+                        is FundingMode.SUBSCRIPTION
+                        else "zero_cost_execution_prohibits_metered_provider"
+                    )
+                ]
                 for candidate in routing.ranked_candidates
-                if profiles_by_id[candidate.provider_id].egress_boundary is not EgressBoundary.LOCAL
+                if (
+                    profiles_by_id[candidate.provider_id].egress_boundary
+                    is not EgressBoundary.LOCAL
+                    and (
+                        profiles_by_id[candidate.provider_id].funding_mode
+                        is not FundingMode.SUBSCRIPTION
+                        or len(prompt_variants)
+                        > profiles_by_id[candidate.provider_id].max_invocations_per_execution
+                    )
+                )
             }
             selected = tuple(
                 candidate
                 for candidate in routing.ranked_candidates
-                if profiles_by_id[candidate.provider_id].egress_boundary is EgressBoundary.LOCAL
+                if candidate.provider_id not in zero_cost_rejections
             )[: campaign.max_candidates]
             if not selected:
                 raise ConflictError("no policy-eligible providers are available for evaluation")
@@ -348,7 +366,16 @@ class EvaluationPipelineService:
                 "provider_policy_version": self.provider_policy_version,
                 "objective": routing.objective.value,
                 "objective_profile_version": routing.objective_profile_version,
-                "selected": [asdict(item) for item in selected],
+                "selected": [
+                    {
+                        **asdict(item),
+                        "funding_mode": profiles_by_id[item.provider_id].funding_mode.value,
+                        "max_invocations_per_execution": profiles_by_id[
+                            item.provider_id
+                        ].max_invocations_per_execution,
+                    }
+                    for item in selected
+                ],
                 "rejected": {
                     provider_id: list(reasons) for provider_id, reasons in routing.rejected.items()
                 }
