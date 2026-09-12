@@ -24,3 +24,15 @@ def test_safe_relative_path_is_accepted() -> None:
     assert str(validate_relative_path("src/control_plane/new_file.py")) == (
         "src/control_plane/new_file.py"
     )
+
+
+def test_unittest_requires_scoped_python_test_files() -> None:
+    request = ToolRequest(
+        name=ToolName.PYTHON_UNITTEST,
+        targets=("tests/test_generated_contract.py",),
+    )
+    assert request.targets == ("tests/test_generated_contract.py",)
+
+    for targets in ((), ("src/control_plane/runtime.py",), ("tests/data.txt",)):
+        with pytest.raises(PydanticValidationError):
+            ToolRequest(name=ToolName.PYTHON_UNITTEST, targets=targets)

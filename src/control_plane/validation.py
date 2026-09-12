@@ -13,7 +13,10 @@ def provider_output_contract(task_kind: TaskKind) -> str:
             "Required keys: commands_requested (array), candidate_revision (string), and "
             "tool_requests (array of typed tool proposals)."
         ),
-        TaskKind.TEST: "Required keys: tests_passed (literal true) and failures (array).",
+        TaskKind.TEST: (
+            "Required keys: tests_passed (literal true) and failures (array). Optional key: "
+            "tool_requests (array of typed deterministic test proposals)."
+        ),
         TaskKind.SECURITY_REVIEW: (
             "Required keys: policy_passed (literal true) and findings (array)."
         ),
@@ -53,7 +56,14 @@ def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name": {"enum": ["LIST_FILES", "PYTHON_COMPILE", "WRITE_TEXT_FILE"]},
+                            "name": {
+                                "enum": [
+                                    "LIST_FILES",
+                                    "PYTHON_COMPILE",
+                                    "PYTHON_UNITTEST",
+                                    "WRITE_TEXT_FILE",
+                                ]
+                            },
                             "path": {"type": "string", "maxLength": 500},
                             "content": {"type": "string", "maxLength": 65_536},
                             "targets": {
@@ -72,7 +82,28 @@ def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
         },
         TaskKind.TEST: {
             "type": "object",
-            "properties": {"tests_passed": {"const": True}, "failures": array},
+            "properties": {
+                "tests_passed": {"const": True},
+                "failures": array,
+                "tool_requests": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"enum": ["PYTHON_COMPILE", "PYTHON_UNITTEST"]},
+                            "targets": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 64,
+                                "items": {"type": "string"},
+                            },
+                        },
+                        "required": ["name", "targets"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
             "required": ["tests_passed", "failures"],
             "additionalProperties": False,
         },
@@ -115,6 +146,8 @@ def validate_provider_result(task_kind: TaskKind, result: ProviderResult) -> Non
         if output.get("tests_passed") is not True:
             raise ValidationError("test result does not pass")
         _require_list(output, "failures")
+        if "tool_requests" in output:
+            _require_list(output, "tool_requests")
     elif task_kind == TaskKind.SECURITY_REVIEW:
         if output.get("policy_passed") is not True:
             raise ValidationError("security policy did not pass")

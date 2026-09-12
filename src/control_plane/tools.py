@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class ToolName(StrEnum):
     LIST_FILES = "LIST_FILES"
     PYTHON_COMPILE = "PYTHON_COMPILE"
+    PYTHON_UNITTEST = "PYTHON_UNITTEST"
     WRITE_TEXT_FILE = "WRITE_TEXT_FILE"
 
 
@@ -27,6 +28,13 @@ class ToolRequest(BaseModel):
                 raise ValueError("WRITE_TEXT_FILE requires path and content")
         elif self.path is not None or self.content is not None:
             raise ValueError(f"{self.name.value} does not accept path or content")
+        if self.name == ToolName.PYTHON_UNITTEST:
+            if not self.targets:
+                raise ValueError("PYTHON_UNITTEST requires at least one test file")
+            for target in self.targets:
+                parsed = validate_relative_path(target)
+                if parsed.parts[0] != "tests" or parsed.suffix != ".py":
+                    raise ValueError("PYTHON_UNITTEST targets must be Python files under tests/")
         for value in ((self.path,) if self.path is not None else ()) + self.targets:
             validate_relative_path(value)
         return self
