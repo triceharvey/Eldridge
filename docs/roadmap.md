@@ -107,8 +107,10 @@ extracted workflow intake, task leasing and execution, retry and reconciliation,
 behind a tested `WorkflowTaskService`; shared compatibility helpers remain until the adjacent domains
 are split. Phase 5.3E extracted the GitHub CI, pull-request, readiness, and authoritative
 merge-confirmation lifecycle behind a tested `GitPullRequestService` without adding merge authority.
-Deployment/recovery and integration boundaries remain. Eldridge will not proceed into broad Phase 6
-infrastructure before those boundaries are reviewable and one explicitly
+Phase 5.3F extracted environment policy, immutable deployment plans, credential-broker execution,
+verification, rollback, and failure containment behind a tested `DeploymentRecoveryService`.
+Integration remains the last internal boundary. Eldridge will not proceed into broad Phase 6
+infrastructure before that boundary is reviewable and one explicitly
 authorized real engineering workflow completes generation, validation, review, protected PR, and
 human disposition. The USD 0 default remains in force; paid-provider proof requires a separate budget
 and egress authorization.

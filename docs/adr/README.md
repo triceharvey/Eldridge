@@ -28,5 +28,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0024: Extract evaluation campaign and read-model boundaries](0024-evaluation-campaign-and-read-model-boundaries.md)
 - [ADR-0025: Extract the workflow and task orchestration boundary](0025-workflow-task-boundary.md)
 - [ADR-0026: Extract the Git and protected pull-request boundary](0026-git-pull-request-boundary.md)
+- [ADR-0027: Extract the controlled deployment and recovery boundary](0027-deployment-recovery-boundary.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.

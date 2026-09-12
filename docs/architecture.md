@@ -35,9 +35,11 @@ decisions into a composed `WorkflowTaskService`. Shared compatibility helpers re
 for Windsurf and deployment callers. Phase 5.3E moves GitHub CI evidence, pull-request
 proposal and reconciliation, readiness assessment, and authoritative merge confirmation into a
 composed `GitPullRequestService`; successful confirmation still uses the workflow component's
-canonical state transition. Deployment/recovery and integration responsibilities still require
-tested domain boundaries before production. These are internal modular-monolith refactors, not
-justification for network services or new infrastructure.
+canonical state transition. Phase 5.3F moves environment policy, immutable deployment planning,
+credential-broker execution, verification, rollback, and failure containment into a composed
+`DeploymentRecoveryService`; it also uses the canonical workflow transition operation. Integration
+responsibilities still require a tested domain boundary before production. These are internal
+modular-monolith refactors, not justification for network services or new infrastructure.
 
 ## Component model
 
