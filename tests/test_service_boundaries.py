@@ -549,3 +549,54 @@ def test_deployment_recovery_commands_delegate_without_changing_the_facade(
     deployment.list_deployment_rollbacks.assert_called_once_with(
         "workflow-1", principal_id="operator-1"
     )
+
+
+def test_windsurf_integration_commands_delegate_without_changing_the_facade(
+    service: ControlPlaneService,
+) -> None:
+    windsurf = Mock()
+    windsurf.claim_windsurf_task.return_value = {"command": "claim"}
+    windsurf.heartbeat_windsurf_task.return_value = {"command": "heartbeat"}
+    windsurf.submit_windsurf_evidence.return_value = {"command": "submit"}
+    service.windsurf_integration = windsurf
+    lease_reference = "lease-1"
+
+    assert service.claim_windsurf_task(task_id="task-1", principal_id="windsurf-cascade") == {
+        "command": "claim"
+    }
+    assert service.heartbeat_windsurf_task(
+        task_id="task-1",
+        lease_token=lease_reference,
+        principal_id="windsurf-cascade",
+    ) == {"command": "heartbeat"}
+    assert service.submit_windsurf_evidence(
+        task_id="task-1",
+        lease_token=lease_reference,
+        principal_id="windsurf-cascade",
+        handoff_digest="a" * 64,
+        result_revision="b" * 40,
+        files_changed=("src/change.py",),
+        tests_passed=True,
+        test_summary="The bounded checks passed.",
+        tool_activity_summary="Only the registered repository was modified.",
+    ) == {"command": "submit"}
+
+    windsurf.claim_windsurf_task.assert_called_once_with(
+        task_id="task-1", principal_id="windsurf-cascade"
+    )
+    windsurf.heartbeat_windsurf_task.assert_called_once_with(
+        task_id="task-1",
+        lease_token=lease_reference,
+        principal_id="windsurf-cascade",
+    )
+    windsurf.submit_windsurf_evidence.assert_called_once_with(
+        task_id="task-1",
+        lease_token=lease_reference,
+        principal_id="windsurf-cascade",
+        handoff_digest="a" * 64,
+        result_revision="b" * 40,
+        files_changed=("src/change.py",),
+        tests_passed=True,
+        test_summary="The bounded checks passed.",
+        tool_activity_summary="Only the registered repository was modified.",
+    )
