@@ -92,6 +92,7 @@ class ClaudeCodeActivation(BaseModel):
     maximum_data_classification: DataClassification = DataClassification.PUBLIC
     maximum_risk: RiskLevel = RiskLevel.LOW
     max_invocations_per_execution: int = Field(default=1, ge=1, le=8)
+    max_invocations_per_workflow: int = Field(default=1, ge=1, le=8)
 
     @field_validator("maximum_data_classification", "maximum_risk", mode="before")
     @classmethod
@@ -290,6 +291,7 @@ def activate_integrations(
             maximum_risk=claude_code.maximum_risk,
             funding_mode=FundingMode.SUBSCRIPTION,
             max_invocations_per_execution=claude_code.max_invocations_per_execution,
+            max_invocations_per_workflow=claude_code.max_invocations_per_workflow,
         )
         bindings.append(ProviderBinding(profile=profile, provider=claude_code_provider))
 

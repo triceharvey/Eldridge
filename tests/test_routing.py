@@ -236,7 +236,7 @@ def test_duplicate_provider_ids_are_rejected_as_ambiguous_configuration() -> Non
         raise AssertionError("ambiguous provider configuration was accepted")
 
 
-def test_only_subscription_profiles_may_define_an_invocation_ceiling() -> None:
+def test_only_subscription_profiles_may_define_invocation_ceilings() -> None:
     with pytest.raises(ValueError, match="only subscription providers"):
         replace(profile("metered"), max_invocations_per_execution=1)
 
@@ -244,9 +244,11 @@ def test_only_subscription_profiles_may_define_an_invocation_ceiling() -> None:
         profile("subscription"),
         funding_mode=FundingMode.SUBSCRIPTION,
         max_invocations_per_execution=1,
+        max_invocations_per_workflow=2,
     )
 
     assert subscription.max_invocations_per_execution == 1
+    assert subscription.max_invocations_per_workflow == 2
 
 
 def test_interoperability_profiles_are_descriptive_and_disabled_by_default() -> None:

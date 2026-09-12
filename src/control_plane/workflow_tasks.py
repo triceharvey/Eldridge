@@ -9,7 +9,7 @@ from time import monotonic
 from typing import Any, Protocol
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from control_plane.audit import append_audit_event
@@ -60,6 +60,7 @@ from control_plane.routing import (
     CapabilityRouter,
     DataClassification,
     EgressBoundary,
+    FundingMode,
     ProviderProfile,
     RiskLevel,
     RoutingObjective,
@@ -486,13 +487,53 @@ class WorkflowTaskService:
             if routed is None:
                 return self._record_routing_block(session, workflow, task, attempt)
             binding, profile = routed
+            if profile.funding_mode is FundingMode.SUBSCRIPTION:
+                prior_invocations = session.scalar(
+                    select(func.count(TaskAttempt.id))
+                    .join(Task, TaskAttempt.task_id == Task.id)
+                    .where(
+                        Task.workflow_id == workflow.id,
+                        TaskAttempt.provider == profile.provider_id,
+                    )
+                )
+                if (
+                    profile.max_invocations_per_workflow <= 0
+                    or int(prior_invocations or 0) >= profile.max_invocations_per_workflow
+                ):
+                    raise ConflictError("subscription invocation ceiling exhausted for workflow")
             attempt.provider = profile.provider_id
             attempt.model = profile.model_version
+            producer_context: dict[str, Any] = {}
+            task_kind = TaskKind(task.kind)
+            if task_kind in REVIEW_PRODUCER_KIND:
+                producer_attempt = session.scalar(
+                    select(TaskAttempt)
+                    .join(Task, TaskAttempt.task_id == Task.id)
+                    .where(
+                        Task.workflow_id == workflow.id,
+                        Task.kind == REVIEW_PRODUCER_KIND[task_kind].value,
+                        TaskAttempt.status == TaskStatus.SUCCEEDED.value,
+                    )
+                    .order_by(TaskAttempt.completed_at.desc())
+                    .limit(1)
+                )
+                if producer_attempt is None:
+                    raise ConflictError("review source output is unavailable")
+                canonical_producer_output = json.dumps(
+                    producer_attempt.output, sort_keys=True, separators=(",", ":")
+                )
+                if len(canonical_producer_output.encode()) > 1_048_576:
+                    raise ValidationError("review source output exceeds one MiB")
+                producer_context = {
+                    "producer_output": producer_attempt.output,
+                    "producer_output_digest": "sha256:"
+                    + sha256(canonical_producer_output.encode()).hexdigest(),
+                }
             request = ProviderRequest(
                 run_id=attempt.id,
                 workflow_id=workflow.id,
                 task_id=task.id,
-                task_kind=TaskKind(task.kind),
+                task_kind=task_kind,
                 role=role,
                 objective=task.objective,
                 context={
@@ -502,7 +543,8 @@ class WorkflowTaskService:
                     "content_trust": "UNTRUSTED_REPOSITORY_CONTEXT",
                     "data_classification": workflow.data_classification,
                     "repository_scope": workflow.repository_scope,
-                },
+                }
+                | producer_context,
                 required_capability=Capability(task.required_capability),
                 idempotency_key=attempt.id,
             )
@@ -522,7 +564,7 @@ class WorkflowTaskService:
                 lease_token=lease_token,
                 worker_id=worker_id,
                 agent_id=agent_id,
-                task_kind=TaskKind(task.kind),
+                task_kind=task_kind,
                 binding=binding,
                 profile=profile,
                 request=request,
@@ -850,13 +892,28 @@ class WorkflowTaskService:
                 producer_id = producer_route.selected_provider_id
                 producer_family = producer_route.selected_provider_family
 
-        profiles = tuple(
-            replace(
-                binding.profile,
-                healthy=(binding.profile.enabled and self._provider_is_healthy(binding.provider)),
-            )
-            for binding in self.provider_bindings.values()
-        )
+        profiles_list: list[ProviderProfile] = []
+        exhausted_subscriptions: set[str] = set()
+        for binding in self.provider_bindings.values():
+            profile = binding.profile
+            healthy = profile.enabled and self._provider_is_healthy(binding.provider)
+            if healthy and profile.funding_mode is FundingMode.SUBSCRIPTION:
+                prior_invocations = session.scalar(
+                    select(func.count(TaskAttempt.id))
+                    .join(Task, TaskAttempt.task_id == Task.id)
+                    .where(
+                        Task.workflow_id == workflow.id,
+                        TaskAttempt.provider == profile.provider_id,
+                    )
+                )
+                healthy = (
+                    profile.max_invocations_per_workflow > 0
+                    and int(prior_invocations or 0) < profile.max_invocations_per_workflow
+                )
+                if not healthy:
+                    exhausted_subscriptions.add(profile.provider_id)
+            profiles_list.append(replace(profile, healthy=healthy))
+        profiles = tuple(profiles_list)
         profiles = self.evidence_store.hydrate_profiles(session, profiles)
         risk = RiskLevel[workflow.risk_class]
         routing_request = RoutingRequest(
@@ -881,6 +938,14 @@ class WorkflowTaskService:
             ),
             None,
         )
+        rejected_candidates = {
+            provider_id: (
+                ["subscription_invocation_ceiling_exhausted"]
+                if provider_id in exhausted_subscriptions
+                else list(reasons)
+            )
+            for provider_id, reasons in decision.rejected.items()
+        }
         session.add(
             RoutingRecord(
                 workflow_id=workflow.id,
@@ -909,12 +974,20 @@ class WorkflowTaskService:
                         "quality_utility": item.quality_utility,
                         "cost_utility": item.cost_utility,
                         "latency_utility": item.latency_utility,
+                        "funding_mode": next(
+                            profile.funding_mode.value
+                            for profile in profiles
+                            if profile.provider_id == item.provider_id
+                        ),
+                        "max_invocations_per_workflow": next(
+                            profile.max_invocations_per_workflow
+                            for profile in profiles
+                            if profile.provider_id == item.provider_id
+                        ),
                     }
                     for item in decision.ranked_candidates
                 ],
-                rejected_candidates={
-                    provider_id: list(reasons) for provider_id, reasons in decision.rejected.items()
-                },
+                rejected_candidates=rejected_candidates,
                 selected_provider_id=decision.selected_provider_id,
                 selected_provider_family=(
                     selected_profile.provider_family if selected_profile else None
@@ -937,9 +1010,7 @@ class WorkflowTaskService:
                 "policy_version": decision.policy_version,
                 "provider_policy_version": self.provider_policy_version,
                 "selected_provider_id": decision.selected_provider_id,
-                "rejected": {
-                    provider_id: list(reasons) for provider_id, reasons in decision.rejected.items()
-                },
+                "rejected": rejected_candidates,
             },
         )
         if selected_profile is None:

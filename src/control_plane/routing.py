@@ -137,6 +137,7 @@ class ProviderProfile:
     evidence: dict[WorkCapability, CapabilityEvidence] = field(default_factory=dict)
     funding_mode: FundingMode = FundingMode.METERED
     max_invocations_per_execution: int = 0
+    max_invocations_per_workflow: int = 0
 
     def __post_init__(self) -> None:
         if (
@@ -145,10 +146,14 @@ class ProviderProfile:
         ):
             raise ValueError("max_invocations_per_execution must be a nonnegative integer")
         if (
-            self.funding_mode is not FundingMode.SUBSCRIPTION
-            and self.max_invocations_per_execution != 0
+            isinstance(self.max_invocations_per_workflow, bool)
+            or self.max_invocations_per_workflow < 0
         ):
-            raise ValueError("only subscription providers may define an invocation ceiling")
+            raise ValueError("max_invocations_per_workflow must be a nonnegative integer")
+        if self.funding_mode is not FundingMode.SUBSCRIPTION and (
+            self.max_invocations_per_execution != 0 or self.max_invocations_per_workflow != 0
+        ):
+            raise ValueError("only subscription providers may define invocation ceilings")
 
 
 @dataclass(frozen=True)

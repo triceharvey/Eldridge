@@ -10,7 +10,8 @@ def provider_output_contract(task_kind: TaskKind) -> str:
             "Required keys: findings (array) and independent_review (literal true)."
         ),
         TaskKind.IMPLEMENT: (
-            "Required keys: commands_requested (array) and candidate_revision (string)."
+            "Required keys: commands_requested (array), candidate_revision (string), and "
+            "tool_requests (array of typed tool proposals)."
         ),
         TaskKind.TEST: "Required keys: tests_passed (literal true) and failures (array).",
         TaskKind.SECURITY_REVIEW: (
@@ -46,8 +47,27 @@ def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
             "properties": {
                 "commands_requested": array,
                 "candidate_revision": {"type": "string"},
+                "tool_requests": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"enum": ["LIST_FILES", "PYTHON_COMPILE", "WRITE_TEXT_FILE"]},
+                            "path": {"type": "string", "maxLength": 500},
+                            "content": {"type": "string", "maxLength": 65_536},
+                            "targets": {
+                                "type": "array",
+                                "maxItems": 64,
+                                "items": {"type": "string"},
+                            },
+                        },
+                        "required": ["name"],
+                        "additionalProperties": False,
+                    },
+                },
             },
-            "required": ["commands_requested", "candidate_revision"],
+            "required": ["commands_requested", "candidate_revision", "tool_requests"],
             "additionalProperties": False,
         },
         TaskKind.TEST: {
@@ -88,6 +108,7 @@ def validate_provider_result(task_kind: TaskKind, result: ProviderResult) -> Non
             raise ValidationError("architecture review lacks independence attestation")
     elif task_kind == TaskKind.IMPLEMENT:
         _require_list(output, "commands_requested")
+        _require_list(output, "tool_requests")
         if not isinstance(output.get("candidate_revision"), str):
             raise ValidationError("implementation result lacks a candidate revision")
     elif task_kind == TaskKind.TEST:

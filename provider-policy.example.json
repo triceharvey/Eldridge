@@ -21,7 +21,8 @@
     "timeout_seconds": 120,
     "maximum_data_classification": "PUBLIC",
     "maximum_risk": "LOW",
-    "max_invocations_per_execution": 1
+    "max_invocations_per_execution": 1,
+    "max_invocations_per_workflow": 1
   },
   "local_model": {
     "enabled": false,
