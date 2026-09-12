@@ -236,6 +236,7 @@ def test_interoperability_profiles_are_descriptive_and_disabled_by_default() -> 
 
     assert {item.provider_id for item in profiles} == {
         "anthropic-claude",
+        "claude-code-subscription",
         "devin",
         "local-openai-compatible",
         "windsurf-cascade",

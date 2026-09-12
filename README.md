@@ -243,6 +243,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 5.3E Git and protected pull-request boundary acceptance](docs/phase-5-3e-acceptance.md)
 - [Phase 5.3F controlled deployment and recovery boundary acceptance](docs/phase-5-3f-acceptance.md)
 - [Phase 5.3G Windsurf integration boundary acceptance](docs/phase-5-3g-acceptance.md)
+- [Phase 5.4A subscription-backed Claude qualification acceptance](docs/phase-5-4a-acceptance.md)
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)

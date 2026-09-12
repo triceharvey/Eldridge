@@ -11,12 +11,12 @@ Start from `provider-policy.example.json` and copy it to the ignored `provider-p
 
 Claude activation disables mock-provider fallback. This prevents an outage, routing failure, or policy mismatch from silently changing which model processes a task. The configured model identifier is copied into the routing profile and evidence partition. A changed model therefore starts without inherited qualification evidence.
 
-A Claude Pro subscription and the Anthropic Messages API are separate access paths. Pro can support
-interactive Claude and Claude Code work, but it must not be represented as an API credential or
-silently routed through the Messages adapter. Subscription-backed CLI or Agent SDK use requires its
-own reviewed adapter and authentication flow; shared production automation should retain predictable,
-separately budgeted API identity. Eldridge currently implements only the disabled-by-default
-Messages API adapter.
+A Claude Pro subscription and the Anthropic Messages API are separate access paths. Pro supports
+Claude Code but must not be represented as an API credential or silently routed through the Messages
+adapter. Eldridge implements separate disabled-by-default identities for the Messages API and Claude
+Code subscription paths. The subscription adapter verifies `claude.ai` authentication, removes
+API-key and alternate-cloud overrides, exposes no tools or repository, and consumes shared plan
+allowance rather than a separately approved API budget.
 
 Devin activation currently exposes only its bounded remote-session lifecycle: create, poll, and cancel with repository scope, tags, a maximum ACU limit, and optional structured-output schema. It is not placed in the normal task-provider routing pool yet. Phase 3 must first ingest Devin's commit or pull-request revision and independently validate its CI evidence; otherwise a remote result could bypass the same revision-bound controls applied to local worktrees.
 
@@ -79,6 +79,20 @@ publication, and production changes remain human decisions.
 
 5. Review the request destination, normalized output, usage, audit event, routing record, and evidence partition before expanding to `INTERNAL` or `MEDIUM`.
 6. Do not qualify a new model for `HIGH` or `CRITICAL` work until the configured evidence floor and independent-review rules are satisfied.
+
+For a Claude Code Pro canary without API billing, enable only `claude_code`, approve external egress,
+disable mock fallback, and retain the initial `PUBLIC` plus `LOW` ceilings. Confirm Claude Code is
+logged into the intended subscription and do not enable usage credits. Then run:
+
+```sh
+CONTROL_PLANE_RUN_LIVE_CLAUDE_CODE_TEST=true \
+  .venv/bin/pytest -m live_provider \
+  tests/test_live_providers.py::test_live_claude_code_subscription_minimal_structured_response
+```
+
+This command sends a synthetic prompt only. It does not read the repository or authorize Claude
+tools. Plan limits remain external operational constraints, so allowance exhaustion fails the call
+rather than changing provider or billing mode.
 
 The Devin probe creates a real remote session and may consume paid capacity. It therefore requires a second, unmistakable opt-in and a repository already authorized in Devin:
 

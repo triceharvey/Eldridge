@@ -6,7 +6,8 @@ These products expose different authority and lifecycle boundaries, so the contr
 
 | Product | Control-plane role | Integration boundary | Phase 2 posture |
 |---|---|---|---|
-| Claude | Model provider | Anthropic Messages API with structured client tool proposals | Adapter implemented, disabled by default |
+| Claude API | Model provider | Anthropic Messages API with structured client tool proposals | Adapter implemented, disabled by default |
+| Claude Code | Model provider | Subscription-authenticated CLI with no tools or repository access | Live synthetic canary passed; disabled by default |
 | Devin | Remote agent runtime | Devin v3 organization sessions using a least-privilege service user | Lifecycle adapter implemented, disabled by default |
 | Windsurf Cascade | Human/IDE agent and MCP client | Git handoff plus authenticated control-plane MCP tools | Local Streamable HTTP boundary implemented; headless execution not claimed |
 

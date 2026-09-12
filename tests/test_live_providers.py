@@ -6,6 +6,7 @@ import pytest
 from control_plane.activation import ProviderActivationPolicy, activate_integrations
 from control_plane.domain import AgentRole, Capability, ProviderRequest, TaskKind
 from control_plane.integrations import RemoteAgentRequest
+from control_plane.providers import ClaudeCodeProvider, ClaudeCodeProviderConfig
 
 
 def _activated() -> object:
@@ -41,6 +42,29 @@ def test_live_anthropic_minimal_structured_response() -> None:
             context={},
             required_capability=Capability.PRODUCE_PLAN,
             idempotency_key="live-anthropic",
+        )
+    )
+    assert result.output.get("live_probe") is True
+
+
+@pytest.mark.live_provider
+def test_live_claude_code_subscription_minimal_structured_response() -> None:
+    if os.getenv("CONTROL_PLANE_RUN_LIVE_CLAUDE_CODE_TEST") != "true":
+        pytest.skip("explicit live Claude Code subscription opt-in is not enabled")
+    provider = ClaudeCodeProvider(
+        ClaudeCodeProviderConfig(enabled=True, model="sonnet", timeout_seconds=120)
+    )
+    result = provider.submit(
+        ProviderRequest(
+            run_id="live-claude-code",
+            workflow_id="live-claude-code",
+            task_id="live-claude-code",
+            task_kind=TaskKind.PLAN,
+            role=AgentRole.ARCHITECT,
+            objective='Return exactly this JSON object: {"live_probe": true}',
+            context={},
+            required_capability=Capability.PRODUCE_PLAN,
+            idempotency_key="live-claude-code",
         )
     )
     assert result.output.get("live_probe") is True

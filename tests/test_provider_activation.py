@@ -11,6 +11,14 @@ from control_plane.runtime import build_runtime
 from control_plane.secrets import StaticSecretResolver
 
 
+class _HealthyClaudeCodeProvider:
+    def __init__(self, config: object) -> None:
+        self.config = config
+
+    def health(self) -> bool:
+        return True
+
+
 def _policy(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "policy_version": "provider-activation/test-v1",
@@ -92,6 +100,36 @@ def test_anthropic_activation_resolves_secret_before_enabling_binding() -> None:
     assert profile.provider_id == "anthropic-claude"
     assert profile.maximum_data_classification is DataClassification.INTERNAL
     assert profile.maximum_risk is RiskLevel.MEDIUM
+    assert EgressBoundary.APPROVED_EXTERNAL in activated.allowed_egress
+
+
+def test_claude_code_activation_requires_egress_and_subscription_health(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    claude_code = {
+        "enabled": True,
+        "model": "sonnet",
+        "maximum_data_classification": "PUBLIC",
+        "maximum_risk": "LOW",
+    }
+    with pytest.raises(ValidationError, match="approved egress"):
+        ProviderActivationPolicy.model_validate(_policy(claude_code=claude_code))
+    policy = ProviderActivationPolicy.model_validate(
+        _policy(
+            allow_external_egress=True,
+            include_mock_providers=False,
+            claude_code=claude_code,
+        )
+    )
+    monkeypatch.setattr("control_plane.activation.ClaudeCodeProvider", _HealthyClaudeCodeProvider)
+
+    activated = activate_integrations(policy, secret_resolver=StaticSecretResolver({}))
+
+    profile = activated.bindings[0].profile
+    assert profile.provider_id == "claude-code-subscription"
+    assert profile.provider_family == "anthropic"
+    assert profile.maximum_data_classification is DataClassification.PUBLIC
+    assert profile.maximum_risk is RiskLevel.LOW
     assert EgressBoundary.APPROVED_EXTERNAL in activated.allowed_egress
 
 
