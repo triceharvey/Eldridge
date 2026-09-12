@@ -14,8 +14,8 @@ def provider_output_contract(task_kind: TaskKind) -> str:
             "tool_requests (array of typed tool proposals)."
         ),
         TaskKind.TEST: (
-            "Required keys: tests_passed (literal true) and failures (array). Optional key: "
-            "tool_requests (array of typed deterministic test proposals)."
+            "Required keys: tests_passed (literal true), failures (array), and tool_requests "
+            "(non-empty array of typed deterministic test proposals)."
         ),
         TaskKind.SECURITY_REVIEW: (
             "Required keys: policy_passed (literal true) and findings (array)."
@@ -52,6 +52,7 @@ def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
                 "candidate_revision": {"type": "string"},
                 "tool_requests": {
                     "type": "array",
+                    "minItems": 1,
                     "maxItems": 8,
                     "items": {
                         "type": "object",
@@ -104,7 +105,7 @@ def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
                     },
                 },
             },
-            "required": ["tests_passed", "failures"],
+            "required": ["tests_passed", "failures", "tool_requests"],
             "additionalProperties": False,
         },
         TaskKind.SECURITY_REVIEW: {
@@ -146,8 +147,7 @@ def validate_provider_result(task_kind: TaskKind, result: ProviderResult) -> Non
         if output.get("tests_passed") is not True:
             raise ValidationError("test result does not pass")
         _require_list(output, "failures")
-        if "tool_requests" in output:
-            _require_list(output, "tool_requests")
+        _require_list(output, "tool_requests")
     elif task_kind == TaskKind.SECURITY_REVIEW:
         if output.get("policy_passed") is not True:
             raise ValidationError("security policy did not pass")
