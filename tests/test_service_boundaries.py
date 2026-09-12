@@ -347,3 +347,110 @@ def test_workflow_task_commands_delegate_without_changing_the_facade(
         deployment_attempt_id=None,
     )
     workflows.cancel_workflow.assert_called_once_with("workflow-1", principal_id="operator-1")
+
+
+def test_git_pull_request_commands_delegate_without_changing_the_facade(
+    service: ControlPlaneService,
+) -> None:
+    git = Mock()
+    git.list_ci_check_evidence.return_value = [{"query": "ci"}]
+    git.ingest_ci_check_evidence.return_value = {"command": "ingest"}
+    git.propose_pull_request.return_value = {"command": "propose"}
+    git.reconcile_pull_request.return_value = {"command": "reconcile"}
+    git.assess_merge_readiness.return_value = {"command": "assess"}
+    git.list_pull_request_proposals.return_value = [{"query": "proposal"}]
+    git.confirm_pull_request_merged.return_value = {"command": "confirm"}
+    git.list_merge_confirmations.return_value = [{"query": "confirmation"}]
+    service.git_pull_requests = git
+
+    assert service.list_ci_check_evidence("workflow-1", principal_id="operator-1") == [
+        {"query": "ci"}
+    ]
+    assert service.ingest_ci_check_evidence(
+        actor_id="github-app",
+        delivery_id="delivery-1",
+        repository="owner/repository",
+        check_run_id="check-1",
+        check_name="test",
+        revision="a" * 40,
+        status="completed",
+        conclusion="success",
+        details_url="https://github.example/check-1",
+        app_slug="github-actions",
+        payload_digest="b" * 64,
+    ) == {"command": "ingest"}
+    assert service.propose_pull_request(
+        workflow_id="workflow-1",
+        actor_id="operator-1",
+        head_branch="codex/change",
+        title="Controlled change",
+        body="Revision-bound evidence.",
+        idempotency_key="proposal-key",
+    ) == {"command": "propose"}
+    assert service.reconcile_pull_request(
+        workflow_id="workflow-1",
+        proposal_id="proposal-1",
+        actor_id="operator-1",
+    ) == {"command": "reconcile"}
+    assert service.assess_merge_readiness(
+        workflow_id="workflow-1",
+        proposal_id="proposal-1",
+        actor_id="operator-1",
+        idempotency_key="readiness-key",
+    ) == {"command": "assess"}
+    assert service.list_pull_request_proposals("workflow-1", principal_id="operator-1") == [
+        {"query": "proposal"}
+    ]
+    assert service.confirm_pull_request_merged(
+        workflow_id="workflow-1",
+        proposal_id="proposal-1",
+        assessment_id="assessment-1",
+        actor_id="operator-1",
+        idempotency_key="confirmation-key",
+    ) == {"command": "confirm"}
+    assert service.list_merge_confirmations("workflow-1", principal_id="operator-1") == [
+        {"query": "confirmation"}
+    ]
+
+    git.list_ci_check_evidence.assert_called_once_with("workflow-1", principal_id="operator-1")
+    git.ingest_ci_check_evidence.assert_called_once_with(
+        actor_id="github-app",
+        delivery_id="delivery-1",
+        repository="owner/repository",
+        check_run_id="check-1",
+        check_name="test",
+        revision="a" * 40,
+        status="completed",
+        conclusion="success",
+        details_url="https://github.example/check-1",
+        app_slug="github-actions",
+        payload_digest="b" * 64,
+    )
+    git.propose_pull_request.assert_called_once_with(
+        workflow_id="workflow-1",
+        actor_id="operator-1",
+        head_branch="codex/change",
+        title="Controlled change",
+        body="Revision-bound evidence.",
+        idempotency_key="proposal-key",
+    )
+    git.reconcile_pull_request.assert_called_once_with(
+        workflow_id="workflow-1",
+        proposal_id="proposal-1",
+        actor_id="operator-1",
+    )
+    git.assess_merge_readiness.assert_called_once_with(
+        workflow_id="workflow-1",
+        proposal_id="proposal-1",
+        actor_id="operator-1",
+        idempotency_key="readiness-key",
+    )
+    git.list_pull_request_proposals.assert_called_once_with("workflow-1", principal_id="operator-1")
+    git.confirm_pull_request_merged.assert_called_once_with(
+        workflow_id="workflow-1",
+        proposal_id="proposal-1",
+        assessment_id="assessment-1",
+        actor_id="operator-1",
+        idempotency_key="confirmation-key",
+    )
+    git.list_merge_confirmations.assert_called_once_with("workflow-1", principal_id="operator-1")
