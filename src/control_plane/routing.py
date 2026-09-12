@@ -317,6 +317,16 @@ def interoperability_profiles() -> tuple[ProviderProfile, ...]:
             model_version="operator-configured",
         ),
         ProviderProfile(
+            provider_id="claude-code-subscription",
+            provider_family="anthropic",
+            execution_mode=ExecutionMode.MODEL,
+            capabilities=general_model - {WorkCapability.TOOL_PROPOSALS},
+            egress_boundary=EgressBoundary.APPROVED_EXTERNAL,
+            maximum_data_classification=DataClassification.INTERNAL,
+            cost_tier=CostTier.LOW,
+            model_version="operator-configured",
+        ),
+        ProviderProfile(
             provider_id="devin",
             provider_family="cognition",
             execution_mode=ExecutionMode.REMOTE_AGENT,

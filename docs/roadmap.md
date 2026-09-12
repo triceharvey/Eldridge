@@ -116,6 +116,12 @@ authorized real engineering workflow completes generation, validation, review, p
 human disposition. The USD 0 default remains in force; paid-provider proof requires a separate budget
 and egress authorization.
 
+Phase 5.4A added a distinct subscription-backed Claude Code provider and passed a synthetic live
+canary with public data, no tools, no repository access, and no API-key billing. This qualifies the
+invocation boundary only. The next slice is a narrowly scoped repository-aware workflow whose exact
+input, writable paths, provider roles, plan allowance, deterministic checks, and independent reviewer
+are approved before execution.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.

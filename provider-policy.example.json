@@ -15,6 +15,13 @@
     "maximum_data_classification": "INTERNAL",
     "maximum_risk": "MEDIUM"
   },
+  "claude_code": {
+    "enabled": false,
+    "model": "sonnet",
+    "timeout_seconds": 120,
+    "maximum_data_classification": "PUBLIC",
+    "maximum_risk": "LOW"
+  },
   "local_model": {
     "enabled": false,
     "endpoint": "http://127.0.0.1:11434/v1/chat/completions",

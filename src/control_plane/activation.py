@@ -12,6 +12,8 @@ from control_plane.integrations import DevinRuntime, DevinRuntimeConfig
 from control_plane.providers import (
     AnthropicProvider,
     AnthropicProviderConfig,
+    ClaudeCodeProvider,
+    ClaudeCodeProviderConfig,
     LocalOpenAIProvider,
     LocalOpenAIProviderConfig,
     MockProvider,
@@ -80,6 +82,24 @@ class DevinActivation(BaseModel):
         return _parse_named_enum(value, enum_type)
 
 
+class ClaudeCodeActivation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    enabled: bool = False
+    model: str = Field(default="sonnet", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+    timeout_seconds: float = Field(default=120, gt=0, le=600)
+    maximum_data_classification: DataClassification = DataClassification.PUBLIC
+    maximum_risk: RiskLevel = RiskLevel.LOW
+
+    @field_validator("maximum_data_classification", "maximum_risk", mode="before")
+    @classmethod
+    def parse_named_limits(cls, value: object, info: ValidationInfo) -> object:
+        enum_type = (
+            DataClassification if info.field_name == "maximum_data_classification" else RiskLevel
+        )
+        return _parse_named_enum(value, enum_type)
+
+
 class LocalModelActivation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -127,6 +147,7 @@ class ProviderActivationPolicy(BaseModel):
     include_mock_providers: bool = True
     secret_environment: dict[str, str] = Field(default_factory=dict)
     anthropic: AnthropicActivation | None = None
+    claude_code: ClaudeCodeActivation | None = None
     devin: DevinActivation | None = None
     local_model: LocalModelActivation | None = None
 
@@ -134,11 +155,17 @@ class ProviderActivationPolicy(BaseModel):
     def enforce_activation_invariants(self) -> ProviderActivationPolicy:
         external_enabled = any(
             activation is not None and activation.enabled
-            for activation in (self.anthropic, self.devin)
+            for activation in (self.anthropic, self.claude_code, self.devin)
         )
         if external_enabled and not self.allow_external_egress:
             raise ValueError("external provider activation requires approved egress")
-        if self.anthropic is not None and self.anthropic.enabled and self.include_mock_providers:
+        if (
+            any(
+                activation is not None and activation.enabled
+                for activation in (self.anthropic, self.claude_code)
+            )
+            and self.include_mock_providers
+        ):
             raise ValueError("live-provider routing cannot silently fall back to mock providers")
         for reference, variable in self.secret_environment.items():
             if not reference or not ENVIRONMENT_NAME.fullmatch(variable):
@@ -147,6 +174,9 @@ class ProviderActivationPolicy(BaseModel):
             if self.anthropic.api_key_ref not in self.secret_environment:
                 raise ValueError("enabled Anthropic provider lacks an allowlisted secret reference")
             if self.anthropic.maximum_data_classification > DataClassification.INTERNAL:
+                raise ValueError("Phase 2 external providers are limited to INTERNAL data")
+        if self.claude_code is not None and self.claude_code.enabled:
+            if self.claude_code.maximum_data_classification > DataClassification.INTERNAL:
                 raise ValueError("Phase 2 external providers are limited to INTERNAL data")
         if self.devin is not None and self.devin.enabled:
             if self.devin.service_token_ref not in self.secret_environment:
@@ -216,7 +246,7 @@ def activate_integrations(
     anthropic = policy.anthropic
     if anthropic is not None and anthropic.enabled:
         resolver.resolve(anthropic.api_key_ref)
-        provider = AnthropicProvider(
+        anthropic_provider = AnthropicProvider(
             AnthropicProviderConfig(
                 enabled=True,
                 model=anthropic.model,
@@ -235,7 +265,29 @@ def activate_integrations(
             maximum_data_classification=anthropic.maximum_data_classification,
             maximum_risk=anthropic.maximum_risk,
         )
-        bindings.append(ProviderBinding(profile=profile, provider=provider))
+        bindings.append(ProviderBinding(profile=profile, provider=anthropic_provider))
+
+    claude_code = policy.claude_code
+    if claude_code is not None and claude_code.enabled:
+        claude_code_provider = ClaudeCodeProvider(
+            ClaudeCodeProviderConfig(
+                enabled=True,
+                model=claude_code.model,
+                timeout_seconds=claude_code.timeout_seconds,
+            )
+        )
+        if not claude_code_provider.health():
+            raise ValueError("Claude Code subscription authentication is unavailable")
+        profile = replace(
+            profiles["claude-code-subscription"],
+            enabled=True,
+            healthy=True,
+            model_version=claude_code.model,
+            profile_version=policy.policy_version,
+            maximum_data_classification=claude_code.maximum_data_classification,
+            maximum_risk=claude_code.maximum_risk,
+        )
+        bindings.append(ProviderBinding(profile=profile, provider=claude_code_provider))
 
     devin_runtime: DevinRuntime | None = None
     devin = policy.devin
