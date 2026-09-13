@@ -19,8 +19,9 @@ def provider_output_contract(task_kind: TaskKind) -> str:
             "tool_requests (array of typed tool proposals)."
         ),
         TaskKind.TEST: (
-            "Required keys: tests_passed (boolean), failures (array), and tool_requests "
-            "(non-empty array of typed deterministic test proposals)."
+            "This is pre-execution test planning, not test execution. Required keys: "
+            "test_plan_ready (boolean), concerns (array), and tool_requests (non-empty array "
+            "of typed deterministic test proposals). Never invent tool results."
         ),
         TaskKind.SECURITY_REVIEW: ("Required keys: policy_passed (boolean) and findings (array)."),
         TaskKind.CODE_REVIEW: (
@@ -87,8 +88,8 @@ def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
         TaskKind.TEST: {
             "type": "object",
             "properties": {
-                "tests_passed": {"type": "boolean"},
-                "failures": array,
+                "test_plan_ready": {"type": "boolean"},
+                "concerns": array,
                 "tool_requests": {
                     "type": "array",
                     "maxItems": 8,
@@ -108,7 +109,7 @@ def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
                     },
                 },
             },
-            "required": ["tests_passed", "failures", "tool_requests"],
+            "required": ["test_plan_ready", "concerns", "tool_requests"],
             "additionalProperties": False,
         },
         TaskKind.SECURITY_REVIEW: {
@@ -147,12 +148,12 @@ def validate_provider_result(task_kind: TaskKind, result: ProviderResult) -> Non
         if not isinstance(output.get("candidate_revision"), str):
             raise ValidationError("implementation result lacks a candidate revision")
     elif task_kind == TaskKind.TEST:
-        _require_list(output, "failures")
+        _require_list(output, "concerns")
         _require_list(output, "tool_requests")
-        if not isinstance(output.get("tests_passed"), bool):
-            raise ValidationError("test result decision must be boolean")
-        if output["tests_passed"] is not True:
-            raise ProviderReviewRejectedError("test result does not pass", output)
+        if not isinstance(output.get("test_plan_ready"), bool):
+            raise ValidationError("test plan readiness decision must be boolean")
+        if output["test_plan_ready"] is not True:
+            raise ProviderReviewRejectedError("test plan is not ready", output)
     elif task_kind == TaskKind.SECURITY_REVIEW:
         _require_list(output, "findings")
         if not isinstance(output.get("policy_passed"), bool):
