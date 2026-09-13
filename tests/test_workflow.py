@@ -67,16 +67,24 @@ def test_reviewers_receive_digest_bound_producer_output(session_factory) -> None
 
     drive_to_human_gate(service)
 
-    review_requests = [
+    evidence_consumer_requests = [
         request
         for request in reviewer.requests
-        if request.task_kind.value in {"ARCHITECTURE_REVIEW", "SECURITY_REVIEW", "CODE_REVIEW"}
+        if request.task_kind.value
+        in {"ARCHITECTURE_REVIEW", "TEST", "SECURITY_REVIEW", "CODE_REVIEW"}
     ]
-    assert len(review_requests) == 3
-    for request in review_requests:
+    assert len(evidence_consumer_requests) == 4
+    for request in evidence_consumer_requests:
         assert isinstance(request.context["producer_output"], dict)
         digest = request.context["producer_output_digest"]
         assert isinstance(digest, str) and digest.startswith("sha256:")
+
+    test_request = next(
+        request for request in evidence_consumer_requests if request.task_kind.value == "TEST"
+    )
+    test_producer_output = test_request.context["producer_output"]
+    assert isinstance(test_producer_output, dict)
+    assert test_producer_output["task_kind"] == "IMPLEMENT"
 
 
 def test_human_can_approve_exact_revision(service: ControlPlaneService) -> None:

@@ -108,6 +108,7 @@ TASK_WORK_CAPABILITY: dict[TaskKind, WorkCapability] = {
 
 REVIEW_PRODUCER_KIND: dict[TaskKind, TaskKind] = {
     TaskKind.ARCHITECTURE_REVIEW: TaskKind.PLAN,
+    TaskKind.TEST: TaskKind.IMPLEMENT,
     TaskKind.SECURITY_REVIEW: TaskKind.IMPLEMENT,
     TaskKind.CODE_REVIEW: TaskKind.IMPLEMENT,
 }

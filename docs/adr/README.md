@@ -36,5 +36,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0032: Require executable, schema-bound model test evidence](0032-executable-model-test-evidence.md)
 - [ADR-0033: Use manifest-bound operator workflows](0033-manifest-bound-operator-workflows.md)
 - [ADR-0034: Preserve substantive negative reviews as evidence](0034-negative-review-evidence.md)
+- [ADR-0035: Bind test planning to implementation evidence](0035-bind-tests-to-implementation-evidence.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.
