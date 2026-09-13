@@ -11,7 +11,7 @@ from control_plane.domain import (
 )
 from control_plane.executors import FakeExecutor
 from control_plane.providers import MockProvider
-from control_plane.validation import validate_provider_result
+from control_plane.validation import provider_output_schema, validate_provider_result
 
 
 def _request(kind: TaskKind) -> ProviderRequest:
@@ -35,6 +35,18 @@ def test_mock_provider_is_deterministic() -> None:
     )
     assert provider.health()
     assert provider.cancel("run")
+
+
+def test_provider_prose_arrays_are_bounded() -> None:
+    for kind in TaskKind:
+        schema = provider_output_schema(kind)
+        for property_schema in schema["properties"].values():
+            if property_schema.get("type") != "array":
+                continue
+            if property_schema.get("items", {}).get("type") != "string":
+                continue
+            assert property_schema["maxItems"] == 8
+            assert property_schema["items"]["maxLength"] == 500
 
 
 def test_fake_executor_executes_no_commands() -> None:

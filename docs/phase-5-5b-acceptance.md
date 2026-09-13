@@ -78,3 +78,10 @@ implementation after two structurally invalid architecture-review responses. Oll
 within the 8,192-token context instead of truncating them. ADR-0037 replaces loose JSON mode with
 strict per-task JSON Schema constrained generation while retaining Eldridge's independent parser and
 validator. A new workflow must qualify this response-shaping correction.
+
+The schema-constrained workflow `422ddef8-7867-467e-9737-f72a9ccabb23` showed that property-level
+conformance was not sufficient: its architecture-review `findings` array had no item-count or
+string-length bound, and both responses exhausted the 2,048-token ceiling before completing JSON.
+ADR-0038 limits every provider prose array to eight strings of at most 500 characters. This bounds
+durable evidence and forces prioritization without raising the zero-cost local runtime's token,
+memory, or timeout allowance.

@@ -32,7 +32,11 @@ def provider_output_contract(task_kind: TaskKind) -> str:
 
 
 def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
-    array = {"type": "array", "items": {"type": "string"}}
+    array = {
+        "type": "array",
+        "maxItems": 8,
+        "items": {"type": "string", "maxLength": 500},
+    }
     schemas: dict[TaskKind, dict[str, Any]] = {
         TaskKind.PLAN: {
             "type": "object",
