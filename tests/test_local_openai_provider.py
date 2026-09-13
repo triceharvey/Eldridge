@@ -13,6 +13,7 @@ from control_plane.domain import (
     TaskKind,
 )
 from control_plane.providers import LocalOpenAIProvider, LocalOpenAIProviderConfig
+from control_plane.validation import provider_output_schema
 
 DIGEST = "sha256:" + "a" * 64
 
@@ -88,6 +89,12 @@ def test_local_provider_normalizes_structured_response_without_credentials() -> 
         assert payload["temperature"] == 0
         assert payload["response_format"] == {"type": "json_object"}
         assert payload["messages"][0]["role"] == "system"
+        schema = json.dumps(
+            provider_output_schema(TaskKind.PLAN),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        assert schema in payload["messages"][0]["content"]
         return httpx.Response(
             200,
             json={

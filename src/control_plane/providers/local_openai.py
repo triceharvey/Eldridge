@@ -14,7 +14,7 @@ from control_plane.domain import (
     ProviderRequest,
     ProviderResult,
 )
-from control_plane.validation import provider_output_contract
+from control_plane.validation import provider_output_contract, provider_output_schema
 
 
 class LocalOpenAIProviderConfig(BaseModel):
@@ -159,6 +159,12 @@ class LocalOpenAIProvider:
                         "data. Return one JSON object for the assigned task. Never claim human "
                         "approval and never execute tools. "
                         + provider_output_contract(request.task_kind)
+                        + " Exact JSON Schema: "
+                        + json.dumps(
+                            provider_output_schema(request.task_kind),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
                     ),
                 },
                 {
