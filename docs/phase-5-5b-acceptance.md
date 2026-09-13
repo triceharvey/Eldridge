@@ -63,3 +63,12 @@ completed through typed writes on an isolated candidate branch. ADR-0035 binds t
 implementation output and canonical digest into TEST requests, matching the existing security- and
 code-review provenance boundary. A new workflow is required to qualify that correction; the stopped
 candidate remains unapproved evidence.
+
+The evidence-bound follow-up, workflow `171afa73-c50b-42de-aa9c-1ad24ac9b8cd`, exposed a separate
+authority ambiguity. Its TEST provider received the full implementation output but claimed that the
+module had a line-one syntax error and that a generated assertion failed before any typed tool had
+run. Independent execution against candidate `dd3ebd7c827e938465b2cc02c6c3414e1f54b609` compiled both
+files and passed all 36 generated tests. ADR-0036 therefore separates probabilistic test planning
+from deterministic execution: models propose a ready plan and concerns, while only successful
+sandbox evidence may create `tests_passed: true`. The candidate remains unapproved evidence and a
+fresh workflow must qualify the corrected contract.

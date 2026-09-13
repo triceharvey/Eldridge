@@ -76,9 +76,8 @@ class MockProvider:
             }
         if request.task_kind == TaskKind.TEST:
             return common | {
-                "tests_passed": True,
-                "test_count": 1,
-                "failures": [],
+                "test_plan_ready": True,
+                "concerns": [],
                 "tool_requests": [],
             }
         if request.task_kind == TaskKind.SECURITY_REVIEW:

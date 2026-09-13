@@ -50,6 +50,16 @@ def test_full_workflow_reaches_human_gate_with_bound_evidence(
             select(CapabilityGrant).where(CapabilityGrant.workflow_id == workflow["id"])
         ).all()
         assert grants and all(not grant.active for grant in grants)
+        test_task = session.scalar(
+            select(Task).where(
+                Task.workflow_id == workflow["id"],
+                Task.kind == "TEST",
+            )
+        )
+        assert test_task is not None
+        assert test_task.attempts[0].output["test_plan_ready"] is True
+        assert test_task.attempts[0].output["tests_passed"] is True
+        assert test_task.attempts[0].output["failures"] == []
         assert verify_audit_chain(session, str(workflow["id"]))
 
 

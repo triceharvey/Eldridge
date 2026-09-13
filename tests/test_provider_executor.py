@@ -59,19 +59,22 @@ def test_fake_executor_rejects_proposed_commands() -> None:
 def test_structured_result_validation_rejects_claim_without_evidence() -> None:
     result = ProviderResult(
         status="SUCCEEDED",
-        output={"tests_passed": True},
+        output={"test_plan_ready": True},
         provider="malformed-mock",
         model="test",
         usage={},
     )
-    with pytest.raises(ValidationError, match="failures"):
+    with pytest.raises(ValidationError, match="concerns"):
         validate_provider_result(TaskKind.TEST, result)
 
 
 @pytest.mark.parametrize(
     ("task_kind", "output"),
     [
-        (TaskKind.TEST, {"tests_passed": False, "failures": ["failed"], "tool_requests": []}),
+        (
+            TaskKind.TEST,
+            {"test_plan_ready": False, "concerns": ["incomplete"], "tool_requests": []},
+        ),
         (
             TaskKind.SECURITY_REVIEW,
             {"policy_passed": False, "findings": ["unsafe candidate"]},
