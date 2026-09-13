@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test test-postgres iac-compatibility db-up db-down migrate api worker mcp demo build-images
+.PHONY: install lint typecheck test test-postgres iac-compatibility terraform-career-lab db-up db-down migrate api worker mcp demo build-images
 
 install:
 	python3 -m pip install -e '.[dev]'
@@ -18,6 +18,9 @@ test-postgres:
 
 iac-compatibility:
 	pytest -q tests/test_iac_compatibility_live.py
+
+terraform-career-lab:
+	pytest -q tests/test_terraform_career_lab_live.py
 
 db-up:
 	docker compose up -d postgres

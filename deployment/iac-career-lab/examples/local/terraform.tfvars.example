@@ -1,0 +1,8 @@
+project_name = "eldridge"
+environment  = "development"
+revision     = "0000000000000000000000000000000000000000"
+
+labels = {
+  owner   = "triceharvey"
+  purpose = "terraform-career-lab"
+}
