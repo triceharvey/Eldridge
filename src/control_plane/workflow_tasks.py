@@ -295,13 +295,16 @@ class WorkflowTaskService:
             workflow = self._get_workflow(session, workflow_id)
             return self._workflow_dict(workflow)
 
-    def lease_next_task(self, *, worker_id: str) -> dict[str, Any] | None:
+    def lease_next_task(
+        self, *, worker_id: str, workflow_id: str | None = None
+    ) -> dict[str, Any] | None:
         with self.session_factory() as session, session.begin():
             self.policy.authorize(session, worker_id, Capability.LEASE_TASK)
+            query = select(Task).where(Task.status == TaskStatus.READY.value)
+            if workflow_id is not None:
+                query = query.where(Task.workflow_id == workflow_id)
             task = session.scalar(
-                select(Task)
-                .where(Task.status == TaskStatus.READY.value)
-                .order_by(Task.created_at, Task.position)
+                query.order_by(Task.created_at, Task.position)
                 .with_for_update(skip_locked=True)
                 .limit(1)
             )
