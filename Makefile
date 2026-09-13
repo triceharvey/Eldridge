@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test test-postgres db-up db-down migrate api worker mcp demo build-images
+.PHONY: install lint typecheck test test-postgres iac-compatibility db-up db-down migrate api worker mcp demo build-images
 
 install:
 	python3 -m pip install -e '.[dev]'
@@ -15,6 +15,9 @@ test:
 
 test-postgres:
 	CONTROL_PLANE_TEST_DATABASE_URL=$${CONTROL_PLANE_DATABASE_URL} pytest -m postgres
+
+iac-compatibility:
+	pytest -q tests/test_iac_compatibility_live.py
 
 db-up:
 	docker compose up -d postgres
