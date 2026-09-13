@@ -41,5 +41,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0037: Enforce local provider output schemas at generation](0037-enforce-local-provider-output-schemas.md)
 - [ADR-0038: Bound provider prose arrays](0038-bound-provider-prose-arrays.md)
 - [ADR-0039: Add Terraform as a compatibility and learning target](0039-terraform-compatibility-target.md)
+- [ADR-0040: Permit a provider-free local Terraform lifecycle lab](0040-local-terraform-lifecycle-lab.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.

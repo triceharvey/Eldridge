@@ -171,6 +171,14 @@ no-apply fixture must initialize, validate, plan, and render bounded JSON eviden
 in separate temporary directories. HCP Terraform remains unactivated; local CLI use creates no
 account, managed resource, remote state, trial-credit consumption, or billing exposure.
 
+Phase 5.7 adds a provider-free local Terraform lifecycle lab. A standard reusable module validates
+its project, environment, revision, metadata, and zero-dollar budget; Terraform and OpenTofu must
+produce bounded plans from it. A separate Terraform-only test may apply the built-in
+`terraform_data` resource to isolated default and staging CLI workspaces, prove revision-change
+detection with a detailed exit code, destroy both objects, and verify empty state. This adds real
+module, state, workspace, plan, apply, output, and destroy experience without granting Terraform
+deployment authority or activating HCP Terraform.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.
