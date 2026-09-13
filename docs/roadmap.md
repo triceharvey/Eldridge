@@ -162,7 +162,14 @@ timeout from measured generation speed, and then received a substantive negative
 Eldridge now treats negative test, security, and code reviews as valid terminal evidence: it records
 their findings, does not waste retries trying to turn a rejection into a pass, and never advances a
 rejected candidate to human approval. A new live candidate must be produced after this control ships;
-neither exercise candidate was merged.
+neither rejected exercise candidate was merged. A later corrected candidate passed the complete
+operator workflow, received explicit human approval, and merged through protected pull request 35.
+
+Phase 5.6 adds HashiCorp Terraform as a pinned compatibility and professional-learning target while
+retaining OpenTofu as Eldridge's only authorized infrastructure execution layer. A provider-free,
+no-apply fixture must initialize, validate, plan, and render bounded JSON evidence under both CLIs
+in separate temporary directories. HCP Terraform remains unactivated; local CLI use creates no
+account, managed resource, remote state, trial-credit consumption, or billing exposure.
 
 ## Rough completion estimate
 
