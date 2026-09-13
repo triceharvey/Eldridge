@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from uuid import uuid4
 
 from control_plane.config import Settings
 from control_plane.domain import ApprovalAction, ApprovalDecision, WorkflowState
+from control_plane.operator_workflow import (
+    OperatorWorkflowManifest,
+    build_operator_runtime,
+    drive_operator_workflow,
+    preflight_operator_workflow,
+)
 from control_plane.runtime import build_runtime
 
 
@@ -58,9 +65,55 @@ def main() -> None:
         default="sqlite:///:memory:",
         help="SQLAlchemy database URL; defaults to an ephemeral local demo database",
     )
+    workflow = subparsers.add_parser("workflow", help="preflight or run a governed workflow")
+    workflow_subparsers = workflow.add_subparsers(dest="workflow_command", required=True)
+    for command in ("preflight", "run"):
+        command_parser = workflow_subparsers.add_parser(command)
+        command_parser.add_argument("--manifest", type=Path, required=True)
+        command_parser.add_argument("--repository-registry", type=Path, required=True)
+        command_parser.add_argument("--provider-policy", type=Path, required=True)
+        if command == "run":
+            command_parser.add_argument("--database-url", required=True)
+            command_parser.add_argument(
+                "--worktree-root", type=Path, default=Path(".control-plane-worktrees")
+            )
+            command_parser.add_argument("--create-schema", action="store_true")
+            command_parser.add_argument("--confirm-execution", action="store_true")
+            command_parser.add_argument("--confirm-external-egress", action="store_true")
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
+    if args.command == "workflow":
+        manifest = OperatorWorkflowManifest.from_file(args.manifest)
+        preflight = preflight_operator_workflow(
+            manifest,
+            repository_registry_file=args.repository_registry,
+            provider_policy_file=args.provider_policy,
+        )
+        if args.workflow_command == "preflight":
+            print(json.dumps(preflight, indent=2, sort_keys=True))
+            raise SystemExit(0)
+        if not args.confirm_execution:
+            raise SystemExit("workflow execution requires --confirm-execution")
+        if preflight["requires_external_egress_confirmation"] and not args.confirm_external_egress:
+            raise SystemExit("external provider use requires --confirm-external-egress")
+        runtime = build_operator_runtime(
+            manifest,
+            repository_registry_file=args.repository_registry,
+            provider_policy_file=args.provider_policy,
+            database_url=args.database_url,
+            worktree_root=args.worktree_root,
+            create_schema=args.create_schema,
+        )
+        try:
+            final = drive_operator_workflow(
+                runtime.service,
+                manifest,
+                emit=lambda event: print(json.dumps(event, sort_keys=True)),
+            )
+            print(json.dumps({"event": "workflow_stopped", "workflow": final}, indent=2))
+        finally:
+            runtime.engine.dispose()
 
 
 if __name__ == "__main__":

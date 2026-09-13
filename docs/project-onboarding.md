@@ -43,6 +43,10 @@ Submit work through the common API:
 
 The same workflow engine then selects eligible AI providers by capability, creates a dedicated branch/worktree, executes typed tools in the sandbox, validates evidence, requires independent review, and stops at human gates. Repository permissions, paths, egress, risk, classification, provider credentials, CI policy, and approvals remain separate controls.
 
+For a local operator-driven run, use the reusable manifest and preflight flow in
+[`operator-workflows.md`](operator-workflows.md). The manifest narrows the registry grant to the exact
+base revision, paths, and provider-stage assignments for one workflow.
+
 ## Isolation choices
 
 - **Central control plane:** recommended for a portfolio or engineering organization. One policy and audit system coordinates many repositories while each task keeps a separate worktree and container.
@@ -52,6 +56,11 @@ Do not place unrelated trust zones in one instance merely for convenience. A res
 
 ## Current availability
 
-The package currently runs from this workspace using `.venv/bin/control-plane-api`, `.venv/bin/control-plane-worker`, and `.venv/bin/control-plane-mcp`. Separate non-root API/worker images, migrations, internal networking, OIDC, metrics, dashboard, and automatic-TLS ingress are packaged, but this local repository still has no initial Git commit or remote and no shared environment has been activated. Other local repositories can be onboarded now through the registry. Remote team use should wait for the operator-specific activation evidence listed in `deployment/README.md`.
+The package currently runs from this workspace using `.venv/bin/control-plane`,
+`.venv/bin/control-plane-api`, `.venv/bin/control-plane-worker`, and
+`.venv/bin/control-plane-mcp`. Separate non-root API/worker images, migrations, internal networking,
+OIDC, metrics, dashboard, and automatic-TLS ingress are packaged. Other local repositories can be
+onboarded now through the registry and the manifest-bound operator command. Remote team use should
+wait for the operator-specific activation evidence listed in `deployment/README.md`.
 
 Provider performance evidence is currently partitioned by provider, model, profile version, and task capability. Before cross-project automatic optimization, Phase 3/5 should add repository and evaluation-suite cohorts so success on one technology stack does not create unjustified trust on another.

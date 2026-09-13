@@ -149,6 +149,13 @@ tests, Ruff, formatting, mypy, dependency audit, PostgreSQL integration, and pro
 26 before merge. This qualifies one small standard-library Python change, not arbitrary autonomous
 coding or hosted operation.
 
+Phase 5.5A packages the proven pipeline as a reusable operator command. A strict JSON manifest binds
+one registered project, immutable base commit, narrowed writable paths, all provider-stage roles,
+risk metadata, routing objective, and a task-lease ceiling. Read-only preflight makes the effective
+scope visible without model calls. Execution requires explicit confirmation, separately confirms
+external egress, preserves typed isolated execution, and stops at the human approval gate without
+push, PR, merge, or deployment authority.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.

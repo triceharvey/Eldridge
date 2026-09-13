@@ -907,8 +907,12 @@ class ControlPlaneService:
             },
         }
 
-    def lease_next_task(self, *, worker_id: str) -> dict[str, Any] | None:
-        return self.workflow_tasks.lease_next_task(worker_id=worker_id)
+    def lease_next_task(
+        self, *, worker_id: str, workflow_id: str | None = None
+    ) -> dict[str, Any] | None:
+        if workflow_id is None:
+            return self.workflow_tasks.lease_next_task(worker_id=worker_id)
+        return self.workflow_tasks.lease_next_task(worker_id=worker_id, workflow_id=workflow_id)
 
     def reclaim_expired_tasks(self, *, worker_id: str) -> int:
         return self.workflow_tasks.reclaim_expired_tasks(worker_id=worker_id)
