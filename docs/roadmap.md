@@ -156,6 +156,14 @@ scope visible without model calls. Execution requires explicit confirmation, sep
 external egress, preserves typed isolated execution, and stops at the human approval gate without
 push, PR, merge, or deployment authority.
 
+Phase 5.5B exercised that generic command with Claude Code Pro and the pinned local Qwen reviewer.
+The exercise rejected one candidate during independent controller checks, diagnosed a local-review
+timeout from measured generation speed, and then received a substantive negative security decision.
+Eldridge now treats negative test, security, and code reviews as valid terminal evidence: it records
+their findings, does not waste retries trying to turn a rejection into a pass, and never advances a
+rejected candidate to human approval. A new live candidate must be produced after this control ships;
+neither exercise candidate was merged.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.
