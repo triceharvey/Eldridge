@@ -49,3 +49,17 @@ generic validation error. ADR-0034 corrects that behavior.
 
 The next live operator run must start from the protected merge containing this control and use a new
 manifest base, provider-policy version, and idempotency key. Prior candidates remain evidence only.
+
+## Continued Live Feedback
+
+The protected ADR-0034 revision was exercised with a scoped 8,192-token Ollama model profile. The
+larger context resolved the prior architecture-review truncation without changing the global local
+model service. Workflow `d3f073c6-051d-4859-8ca3-97f472c4d4ca` then passed planning, architecture
+review, and isolated implementation before stopping at TEST.
+
+The retained negative test output showed that the test provider had not received the implementation
+artifact and inferred that the two candidate files were absent. The implementation had in fact
+completed through typed writes on an isolated candidate branch. ADR-0035 binds the successful
+implementation output and canonical digest into TEST requests, matching the existing security- and
+code-review provenance boundary. A new workflow is required to qualify that correction; the stopped
+candidate remains unapproved evidence.
