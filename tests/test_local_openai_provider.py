@@ -87,7 +87,13 @@ def test_local_provider_normalizes_structured_response_without_credentials() -> 
         assert request.url.host == "127.0.0.1"
         assert request.headers.get("authorization") is None
         assert payload["temperature"] == 0
-        assert payload["response_format"] == {"type": "json_object"}
+        response_format = payload["response_format"]
+        assert response_format["type"] == "json_schema"
+        assert response_format["json_schema"] == {
+            "name": "eldridge_plan",
+            "strict": True,
+            "schema": provider_output_schema(TaskKind.PLAN),
+        }
         assert payload["messages"][0]["role"] == "system"
         schema = json.dumps(
             provider_output_schema(TaskKind.PLAN),

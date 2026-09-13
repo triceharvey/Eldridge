@@ -146,11 +146,19 @@ class LocalOpenAIProvider:
             return False
 
     def _payload(self, request: ProviderRequest) -> dict[str, Any]:
+        output_schema = provider_output_schema(request.task_kind)
         payload: dict[str, Any] = {
             "model": self.config.model,
             "max_tokens": self.config.max_tokens,
             "temperature": 0,
-            "response_format": {"type": "json_object"},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": f"eldridge_{request.task_kind.value.lower()}",
+                    "strict": True,
+                    "schema": output_schema,
+                },
+            },
             "messages": [
                 {
                     "role": "system",
@@ -161,7 +169,7 @@ class LocalOpenAIProvider:
                         + provider_output_contract(request.task_kind)
                         + " Exact JSON Schema: "
                         + json.dumps(
-                            provider_output_schema(request.task_kind),
+                            output_schema,
                             sort_keys=True,
                             separators=(",", ":"),
                         )

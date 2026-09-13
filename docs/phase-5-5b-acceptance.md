@@ -72,3 +72,9 @@ files and passed all 36 generated tests. ADR-0036 therefore separates probabilis
 from deterministic execution: models propose a ready plan and concerns, while only successful
 sandbox evidence may create `tests_passed: true`. The candidate remains unapproved evidence and a
 fresh workflow must qualify the corrected contract.
+
+The first post-ADR-0036 workflow, `8fe7d78c-4ede-4413-aec1-05c5f2bccaf2`, stopped before any
+implementation after two structurally invalid architecture-review responses. Ollama completed both
+within the 8,192-token context instead of truncating them. ADR-0037 replaces loose JSON mode with
+strict per-task JSON Schema constrained generation while retaining Eldridge's independent parser and
+validator. A new workflow must qualify this response-shaping correction.
