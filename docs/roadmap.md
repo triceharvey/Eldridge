@@ -139,6 +139,16 @@ controller recorded the real candidate revision. After all six stages succeeded,
 that exact revision and opened protected pull request 21. This proves the core end-to-end engineering
 loop at low risk; general code-generation qualification and hosted operation remain separate work.
 
+Phase 5.4D completed the first governed Python change. Claude Code produced a two-file classifier and
+unittest candidate through the subscription CLI boundary; pinned local Qwen supplied the remaining
+review stages and executable test proposals. Rejected attempts exposed optional test evidence,
+local-provider schema drift, an isolated import mismatch, and a formatting mismatch. Eldridge added
+a bounded unittest tool, required executable live-test evidence, aligned local prompts to the exact
+JSON Schema, and refined the trusted specification. The final unmodified candidate passed 303 local
+tests, Ruff, formatting, mypy, dependency audit, PostgreSQL integration, and protected pull request
+26 before merge. This qualifies one small standard-library Python change, not arbitrary autonomous
+coding or hosted operation.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.

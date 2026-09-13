@@ -18,6 +18,11 @@ Code subscription paths. The subscription adapter verifies `claude.ai` authentic
 API-key and alternate-cloud overrides, exposes no tools or repository, and consumes shared plan
 allowance rather than a separately approved API budget.
 
+Claude Code is invoked non-interactively with `claude -p`, JSON output, no session persistence, an
+empty tool set, plan permission mode, and safe mode. These calls consume eligible subscription
+allowance but do not create visible conversations in the Claude desktop or web application. Eldridge
+records the normalized result and routing evidence instead.
+
 Subscription policy defines separate ceilings for one evaluation execution and one multi-stage
 workflow. A provider that exhausts the workflow ceiling becomes routing-ineligible for later tasks;
 only another independently configured and policy-eligible provider may continue the workflow.

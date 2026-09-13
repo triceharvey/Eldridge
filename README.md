@@ -9,9 +9,10 @@ providers and privileged integrations remain disabled by default.
 
 **Evidence scope:** “Verified” in this repository always means the scope named by the associated
 acceptance record: deterministic tests, PostgreSQL integration, a local k3d exercise, or an explicitly
-identified live integration. Phase 5.4B includes one real Claude-to-local-Qwen evaluation,
-independent-review, and exact-digest promotion chain; it does not imply hosted-production validation. Eldridge is intentionally
-AI-assisted and dogfoods agent-generated implementation and documentation, while human decisions,
+identified live integration. Phase 5.4D includes a real Claude-to-local-Qwen Python-change workflow,
+executable isolated tests, refinement from rejected candidates, and a protected merge; it does not
+imply hosted-production validation. Eldridge is intentionally AI-assisted and dogfoods
+agent-generated implementation and documentation, while human decisions,
 protected pull requests, independent CI, and explicit evidence boundaries remain the authority.
 
 This repository defines a production-minded control plane for coordinating specialized AI engineering agents under explicit policy, isolation, audit, and human approval. The system is not a group chat for models. It is a workflow engine in which agents are treated as untrusted, non-human service identities and deterministic controls outrank model recommendations.
@@ -247,6 +248,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 5.4A subscription-backed Claude qualification acceptance](docs/phase-5-4a-acceptance.md)
 - [Phase 5.4B real multi-model vertical-slice acceptance](docs/phase-5-4b-acceptance.md)
 - [Phase 5.4C real repository workflow acceptance](docs/phase-5-4c-acceptance.md)
+- [Phase 5.4D governed Python change acceptance](docs/phase-5-4d-acceptance.md)
 - [Proposed open-source deployment profile](docs/open-source-deployment-profile.md)
 - [OpenTofu saved-plan validation](docs/opentofu-plan-validation.md)
 - [Local OpenTofu and k3d activation evidence](docs/local-toolchain-activation.md)
