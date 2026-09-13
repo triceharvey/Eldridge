@@ -160,6 +160,14 @@ class ValidationError(ControlPlaneError):
     pass
 
 
+class ProviderReviewRejectedError(ValidationError):
+    """A structurally valid provider review rejected the candidate."""
+
+    def __init__(self, message: str, output: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.output = dict(output)
+
+
 class SandboxError(ControlPlaneError):
     pass
 

@@ -30,6 +30,7 @@ from control_plane.domain import (
     NotFoundError,
     ProviderRequest,
     ProviderResult,
+    ProviderReviewRejectedError,
     ReconciliationDecision,
     TaskKind,
     TaskStatus,
@@ -441,6 +442,8 @@ class WorkflowTaskService:
                         raise ValidationError("implementation result lacks candidate revision")
                     candidate_revision = candidate
             except Exception as exc:
+                if isinstance(exc, ProviderReviewRejectedError):
+                    validation_passed = True
                 return self._finalize_execution_failure(
                     prepared,
                     exc,
@@ -1430,9 +1433,16 @@ class WorkflowTaskService:
         if attempt.model == "pending":
             attempt.model = "unknown"
         attempt.error_code = type(exc).__name__
-        attempt.output = {"error": "provider or executor operation failed"}
+        review_rejected = isinstance(exc, ProviderReviewRejectedError)
+        if isinstance(exc, ProviderReviewRejectedError):
+            attempt.output = {
+                "error": "provider review rejected candidate",
+                "review": exc.output,
+            }
+        else:
+            attempt.output = {"error": "provider or executor operation failed"}
         attempt.completed_at = datetime.now(UTC)
-        retrying = attempt.attempt_number < task.max_attempts
+        retrying = not review_rejected and attempt.attempt_number < task.max_attempts
         task.status = TaskStatus.READY.value if retrying else TaskStatus.FAILED.value
         task.lease_owner = None
         task.lease_token = None
@@ -1451,6 +1461,7 @@ class WorkflowTaskService:
                 "attempt_id": attempt.id,
                 "attempt_number": attempt.attempt_number,
                 "error_code": type(exc).__name__,
+                "review_rejected": review_rejected,
                 "retrying": retrying,
             },
         )
@@ -1460,7 +1471,11 @@ class WorkflowTaskService:
                 workflow,
                 WorkflowState.FAILED,
                 actor_id="orchestrator",
-                reason="task retry limit exhausted",
+                reason=(
+                    "provider review rejected candidate"
+                    if review_rejected
+                    else "task retry limit exhausted"
+                ),
             )
         session.flush()
         return self._task_dict(task)

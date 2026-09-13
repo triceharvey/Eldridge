@@ -1,6 +1,11 @@
 from typing import Any
 
-from control_plane.domain import ProviderResult, TaskKind, ValidationError
+from control_plane.domain import (
+    ProviderResult,
+    ProviderReviewRejectedError,
+    TaskKind,
+    ValidationError,
+)
 
 
 def provider_output_contract(task_kind: TaskKind) -> str:
@@ -14,12 +19,10 @@ def provider_output_contract(task_kind: TaskKind) -> str:
             "tool_requests (array of typed tool proposals)."
         ),
         TaskKind.TEST: (
-            "Required keys: tests_passed (literal true), failures (array), and tool_requests "
+            "Required keys: tests_passed (boolean), failures (array), and tool_requests "
             "(non-empty array of typed deterministic test proposals)."
         ),
-        TaskKind.SECURITY_REVIEW: (
-            "Required keys: policy_passed (literal true) and findings (array)."
-        ),
+        TaskKind.SECURITY_REVIEW: ("Required keys: policy_passed (boolean) and findings (array)."),
         TaskKind.CODE_REVIEW: (
             "Required keys: review_passed (boolean) and blocking_findings (array)."
         ),
@@ -84,7 +87,7 @@ def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
         TaskKind.TEST: {
             "type": "object",
             "properties": {
-                "tests_passed": {"const": True},
+                "tests_passed": {"type": "boolean"},
                 "failures": array,
                 "tool_requests": {
                     "type": "array",
@@ -110,7 +113,7 @@ def provider_output_schema(task_kind: TaskKind) -> dict[str, Any]:
         },
         TaskKind.SECURITY_REVIEW: {
             "type": "object",
-            "properties": {"policy_passed": {"const": True}, "findings": array},
+            "properties": {"policy_passed": {"type": "boolean"}, "findings": array},
             "required": ["policy_passed", "findings"],
             "additionalProperties": False,
         },
@@ -144,18 +147,24 @@ def validate_provider_result(task_kind: TaskKind, result: ProviderResult) -> Non
         if not isinstance(output.get("candidate_revision"), str):
             raise ValidationError("implementation result lacks a candidate revision")
     elif task_kind == TaskKind.TEST:
-        if output.get("tests_passed") is not True:
-            raise ValidationError("test result does not pass")
         _require_list(output, "failures")
         _require_list(output, "tool_requests")
+        if not isinstance(output.get("tests_passed"), bool):
+            raise ValidationError("test result decision must be boolean")
+        if output["tests_passed"] is not True:
+            raise ProviderReviewRejectedError("test result does not pass", output)
     elif task_kind == TaskKind.SECURITY_REVIEW:
-        if output.get("policy_passed") is not True:
-            raise ValidationError("security policy did not pass")
         _require_list(output, "findings")
+        if not isinstance(output.get("policy_passed"), bool):
+            raise ValidationError("security policy decision must be boolean")
+        if output["policy_passed"] is not True:
+            raise ProviderReviewRejectedError("security policy did not pass", output)
     elif task_kind == TaskKind.CODE_REVIEW:
-        if output.get("review_passed") is not True:
-            raise ValidationError("code review did not pass")
         _require_list(output, "blocking_findings")
+        if not isinstance(output.get("review_passed"), bool):
+            raise ValidationError("code review decision must be boolean")
+        if output["review_passed"] is not True:
+            raise ProviderReviewRejectedError("code review did not pass", output)
 
 
 def _require_list(output: dict[str, Any], field: str) -> None:

@@ -15,6 +15,7 @@ control-plane.db
 .control-plane-worktrees/
 repository-registry.json
 provider-policy.json
+operator-workflow.json
 github-app-policy.json
 oidc-policy.json
 .env.production

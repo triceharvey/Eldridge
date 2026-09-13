@@ -5,6 +5,7 @@ from control_plane.domain import (
     Capability,
     ProviderRequest,
     ProviderResult,
+    ProviderReviewRejectedError,
     TaskKind,
     ValidationError,
 )
@@ -65,3 +66,34 @@ def test_structured_result_validation_rejects_claim_without_evidence() -> None:
     )
     with pytest.raises(ValidationError, match="failures"):
         validate_provider_result(TaskKind.TEST, result)
+
+
+@pytest.mark.parametrize(
+    ("task_kind", "output"),
+    [
+        (TaskKind.TEST, {"tests_passed": False, "failures": ["failed"], "tool_requests": []}),
+        (
+            TaskKind.SECURITY_REVIEW,
+            {"policy_passed": False, "findings": ["unsafe candidate"]},
+        ),
+        (
+            TaskKind.CODE_REVIEW,
+            {"review_passed": False, "blocking_findings": ["incorrect result"]},
+        ),
+    ],
+)
+def test_negative_review_is_valid_structured_rejection(
+    task_kind: TaskKind, output: dict[str, object]
+) -> None:
+    result = ProviderResult(
+        status="SUCCEEDED",
+        output=output,
+        provider="reviewer",
+        model="test",
+        usage={},
+    )
+
+    with pytest.raises(ProviderReviewRejectedError) as rejected:
+        validate_provider_result(task_kind, result)
+
+    assert rejected.value.output == output
