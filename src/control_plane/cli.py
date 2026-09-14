@@ -13,6 +13,7 @@ from control_plane.operator_workflow import (
     drive_operator_workflow,
     preflight_operator_workflow,
 )
+from control_plane.production_readiness import evaluate_production_readiness_file
 from control_plane.runtime import build_runtime
 
 
@@ -65,6 +66,12 @@ def main() -> None:
         default="sqlite:///:memory:",
         help="SQLAlchemy database URL; defaults to an ephemeral local demo database",
     )
+    production = subparsers.add_parser("production", help="evaluate hosted production evidence")
+    production_subparsers = production.add_subparsers(dest="production_command", required=True)
+    readiness = production_subparsers.add_parser(
+        "readiness", help="fail closed on missing, invalid, stale, or unbound evidence"
+    )
+    readiness.add_argument("--manifest", type=Path, required=True)
     workflow = subparsers.add_parser("workflow", help="preflight or run a governed workflow")
     workflow_subparsers = workflow.add_subparsers(dest="workflow_command", required=True)
     for command in ("preflight", "run"):
@@ -83,6 +90,13 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
+    if args.command == "production":
+        try:
+            report = evaluate_production_readiness_file(args.manifest)
+        except (OSError, ValueError) as error:
+            raise SystemExit(str(error)) from error
+        print(json.dumps(report, indent=2, sort_keys=True))
+        raise SystemExit(0 if report["ready"] else 2)
     if args.command == "workflow":
         manifest = OperatorWorkflowManifest.from_file(args.manifest)
         preflight = preflight_operator_workflow(
