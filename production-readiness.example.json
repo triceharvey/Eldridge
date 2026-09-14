@@ -1,0 +1,72 @@
+{
+  "schema_version": "1",
+  "environment": "production",
+  "release_revision": "0000000000000000000000000000000000000000",
+  "immutable_images": {
+    "api_image": "registry.eldridge.dev/control-plane-api@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "worker_image": "registry.eldridge.dev/control-plane-worker@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "ingress_image": "registry.eldridge.dev/caddy@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "scan_passed": false,
+    "critical_findings": 0,
+    "high_findings": 0,
+    "observed_at": "1970-01-01T00:00:00Z"
+  },
+  "public_tls": {
+    "endpoint": "https://control.eldridge.dev",
+    "dns_resolves": false,
+    "certificate_valid": false,
+    "minimum_tls_version": "1.2",
+    "observed_at": "1970-01-01T00:00:00Z"
+  },
+  "oidc": {
+    "issuer": "https://identity.eldridge.dev",
+    "audience": "replace-with-production-audience",
+    "jwks_uri": "https://identity.eldridge.dev/.well-known/jwks.json",
+    "mapped_subject": "replace-with-stable-subject",
+    "positive_test_passed": false,
+    "negative_test_passed": false,
+    "observed_at": "1970-01-01T00:00:00Z"
+  },
+  "postgresql": {
+    "host": "postgres.eldridge.dev",
+    "tls_verified": false,
+    "migration_at_head": false,
+    "connectivity_test_passed": false,
+    "observed_at": "1970-01-01T00:00:00Z"
+  },
+  "github_webhook": {
+    "delivery_id": "replace-with-delivery-id",
+    "revision": "0000000000000000000000000000000000000000",
+    "signature_verified": false,
+    "duplicate_delivery_test_passed": false,
+    "observed_at": "1970-01-01T00:00:00Z"
+  },
+  "metrics": {
+    "authenticated_scrape_passed": false,
+    "unauthorized_scrape_rejected": false,
+    "observed_at": "1970-01-01T00:00:00Z"
+  },
+  "backup_restore": {
+    "backup_id": "replace-with-backup-id",
+    "backup_at": "1970-01-01T00:00:00Z",
+    "restore_at": "1970-01-01T00:00:00Z",
+    "restored_revision": "0000000000000000000000000000000000000000",
+    "restore_verified": false,
+    "measured_rpo_seconds": 86400,
+    "measured_rto_seconds": 3600
+  },
+  "protected_workflow": {
+    "workflow_id": "replace-with-workflow-id",
+    "pull_request_number": 1,
+    "head_revision": "0000000000000000000000000000000000000000",
+    "merge_commit": "0000000000000000000000000000000000000000",
+    "direct_push_blocked": false,
+    "required_checks": [
+      "gitleaks",
+      "package",
+      "test"
+    ],
+    "human_approval_recorded": false,
+    "observed_at": "1970-01-01T00:00:00Z"
+  }
+}

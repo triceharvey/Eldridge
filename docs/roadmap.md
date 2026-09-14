@@ -179,6 +179,13 @@ detection with a detailed exit code, destroy both objects, and verify empty stat
 module, state, workspace, plan, apply, output, and destroy experience without granting Terraform
 deployment authority or activating HCP Terraform.
 
+Phase 5.8 turns the remaining hosted-production conditions into a strict machine-readable evidence
+gate. One release-bound manifest must prove digest-pinned and scanned images, public TLS and DNS,
+real OIDC behavior, hosted PostgreSQL, signed and replay-safe webhook delivery, protected metrics,
+backup restoration, and a human-approved protected workflow. Missing, failed, stale, future-dated,
+placeholder, mutable, or revision-mismatched evidence exits non-ready. This completes the local
+readiness decision mechanism; it does not fabricate or replace the eight external observations.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.
