@@ -34,7 +34,9 @@ This checklist is the boundary between the locally verified implementation and e
 
 ## Runtime activation
 
-- [ ] Select the non-production hosting target and managed PostgreSQL service.
+- [x] Select OCI Always Free A1 as the first plan-only non-production target, with single-node
+  PostgreSQL for the temporary canary and off-host Object Storage backups. Account activation,
+  capacity confirmation, and a real saved plan remain pending.
 - [ ] Publish API and worker images by immutable digest and retain scan evidence.
 - [ ] Configure DNS and verify automatic TLS at the public endpoint.
 - [ ] Configure authenticated Prometheus scraping and verify the operations dashboard.

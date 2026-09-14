@@ -1,4 +1,4 @@
-.PHONY: install lint typecheck test test-postgres iac-compatibility terraform-career-lab db-up db-down migrate api worker mcp demo build-images
+.PHONY: install lint typecheck test test-postgres iac-compatibility terraform-career-lab oci-canary-test db-up db-down migrate api worker mcp demo build-images
 
 install:
 	python3 -m pip install -e '.[dev]'
@@ -21,6 +21,10 @@ iac-compatibility:
 
 terraform-career-lab:
 	pytest -q tests/test_terraform_career_lab_live.py
+
+oci-canary-test:
+	tofu -chdir=deployment/oci-canary init -backend=false -input=false -lockfile=readonly
+	tofu -chdir=deployment/oci-canary test -no-color
 
 db-up:
 	docker compose up -d postgres

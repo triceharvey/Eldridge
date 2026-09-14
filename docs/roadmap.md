@@ -186,6 +186,13 @@ backup restoration, and a human-approved protected workflow. Missing, failed, st
 placeholder, mutable, or revision-mismatched evidence exits non-ready. This completes the local
 readiness decision mechanism; it does not fabricate or replace the eight external observations.
 
+Phase 5.9 selects OCI Always Free as the first hosted canary planning target. A pinned OCI provider
+profile declares one Arm64 A1 Flex VM, a network exposing only ports 80 and 443, and a private
+versioned backup bucket inside the approved zero-dollar recurring ceiling. Home-region and Always
+Free eligibility require explicit operator confirmation. OpenTofu and Terraform mock-provider tests
+prove the plan graph without credentials, API calls, state, or resources; real planning and apply
+remain separately gated.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.
