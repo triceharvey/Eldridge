@@ -67,9 +67,7 @@ def main() -> None:
         help="SQLAlchemy database URL; defaults to an ephemeral local demo database",
     )
     production = subparsers.add_parser("production", help="evaluate hosted production evidence")
-    production_subparsers = production.add_subparsers(
-        dest="production_command", required=True
-    )
+    production_subparsers = production.add_subparsers(dest="production_command", required=True)
     readiness = production_subparsers.add_parser(
         "readiness", help="fail closed on missing, invalid, stale, or unbound evidence"
     )
