@@ -259,6 +259,8 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Local Terraform career-lab acceptance](docs/terraform-career-lab-acceptance.md)
 - [Hosted production readiness gate](docs/production-readiness.md)
 - [Phase 5.8 production readiness acceptance](docs/phase-5-8-acceptance.md)
+- [OCI Always Free hosted-canary profile](deployment/oci-canary/README.md)
+- [Phase 5.9 OCI hosted-canary plan acceptance](docs/phase-5-9-acceptance.md)
 - [Ephemeral k3d identity-boundary validation](docs/k3d-identity-validation.md)
 - [Onboarding other projects](docs/project-onboarding.md)
 - [Proposed data model](docs/data-model.md)

@@ -43,5 +43,6 @@ ADRs capture decisions that materially shape security, reliability, or evolution
 - [ADR-0039: Add Terraform as a compatibility and learning target](0039-terraform-compatibility-target.md)
 - [ADR-0040: Permit a provider-free local Terraform lifecycle lab](0040-local-terraform-lifecycle-lab.md)
 - [ADR-0041: Require a fail-closed production readiness evidence gate](0041-production-readiness-evidence-gate.md)
+- [ADR-0042: Select OCI Always Free for the first hosted canary plan](0042-oci-always-free-hosted-canary.md)
 
 Each ADR records context, decision, alternatives, consequences, and failure behavior. Reversals are documented by a superseding ADR rather than editing history to hide the prior decision.

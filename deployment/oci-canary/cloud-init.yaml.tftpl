@@ -1,0 +1,13 @@
+#cloud-config
+package_update: true
+packages:
+  - ca-certificates
+  - docker.io
+write_files:
+  - path: /etc/eldridge/release-revision
+    owner: root:root
+    permissions: "0444"
+    content: "${release_revision}\n"
+runcmd:
+  - [systemctl, enable, --now, docker]
+  - [install, -d, -m, "0750", -o, root, -g, root, /opt/eldridge]
