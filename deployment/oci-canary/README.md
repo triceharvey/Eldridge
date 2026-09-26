@@ -36,7 +36,58 @@ engine. Neither `tofu apply` nor `terraform apply` is authorized by this profile
 6. Run `tofu plan -out=eldridge-oci-canary.tfplan`, inspect its JSON, obtain a separate execution
    approval, and retain an exact cost estimate before considering an apply.
 
+Use OCI Cloud Shell for an operator-driven plan when local browser callbacks or local-network
+permissions are not appropriate. Cloud Shell inherits the signed-in OCI identity, stays in the
+selected OCI region, and does not require a long-lived API key on the operator workstation.
+
+A short-lived local security-token session is an optional alternative:
+
+```bash
+oci session authenticate \
+  --region us-sanjose-1 \
+  --tenancy-name tricenharvey \
+  --profile-name eldridge-session \
+  --session-expiration-in-minutes 60
+export OCI_CLI_PROFILE=eldridge-session
+export OCI_CLI_AUTH=security_token
+```
+
+The generated local session material stays under the operator's `~/.oci` directory and expires.
+It must not be used when the callback listener would require an unapproved local-network permission.
+Real `*.tfvars`, saved `*.tfplan` files, and Terraform state are ignored by Git and must never be
+copied into an issue, pull request, model prompt, or other shared artifact.
+
 This is a single-node canary, not a highly available production topology. PostgreSQL, the API,
 worker, and ingress will initially share the VM while encrypted database backups are copied to the
 separate Object Storage failure domain. A paid or otherwise sustainable production profile should
 separate database and worker failure domains once real usage justifies it.
+
+## Live eligibility checkpoint
+
+On 2026-09-25, the owner tenancy was inspected without creating workload resources. The console
+confirmed:
+
+- the tenancy home region is `us-sanjose-1` (US West, San Jose);
+- `VM.Standard.A1.Flex` is selectable and marked **Always Free-eligible**;
+- the shape accepts the bounded 2 OCPU and 12 GB configuration;
+- Canonical Ubuntu 24.04 Minimal aarch64 is compatible and listed as **Free**; and
+- a 50 GB boot volume with in-transit encryption is accepted by the instance builder.
+
+This checkpoint establishes console eligibility, not host capacity at apply time and not a final
+price guarantee. No instance, VCN, subnet, volume, bucket, or other workload resource was created
+during the inspection. On 2026-09-26, the zero-cost `eldridge-canary` IAM compartment was created as
+the isolation boundary for the provider-backed plan.
+
+The signed-in OCI Cloud Shell then produced an authenticated, provider-backed planning result in
+`us-sanjose-1`. Its sanitized JSON review showed eight creates and zero destructive actions. The
+planned instance remained `VM.Standard.A1.Flex` at 2 OCPUs and 12 GB memory with a 50 GB boot
+volume; the only public ingress was TCP 80 and 443; the Object Storage bucket was private and
+versioned; and the embedded boundary remained USD 0 recurring with at most USD 5 for the temporary
+exercise. No plan was applied and no instance, VCN, subnet, gateway, route table, security list,
+volume, or bucket was created.
+
+Cloud Shell supplied Terraform 1.5.7 rather than the repository's required OpenTofu/Terraform 1.9+
+runtime. The provider-backed plan therefore used a version-only relaxation in a disposable Cloud
+Shell clone and is evidence-only: it is not an apply candidate. The committed source constraint and
+OpenTofu execution policy were not changed. A fresh plan from a compatible OpenTofu runtime, exact
+cost confirmation, and a separate apply approval remain mandatory.

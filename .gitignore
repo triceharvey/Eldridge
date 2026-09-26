@@ -21,6 +21,8 @@ oidc-policy.json
 .env.production
 deployment/policies/
 .terraform/
+*.tfvars
+!*.tfvars.example
 *.tfplan
 *.tfstate
 *.tfstate.*

@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from typing import Any, cast
+from typing import Any, SupportsFloat, SupportsInt, cast
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -864,9 +864,9 @@ class ControlPlaneService:
             validation_passed,
             average_latency,
         ) in provider_rows:
-            total = int(observations)
-            successful = int(succeeded or 0)
-            validated = int(validation_passed or 0)
+            total = int(cast(SupportsInt, observations))
+            successful = int(cast(SupportsInt, succeeded or 0))
+            validated = int(cast(SupportsInt, validation_passed or 0))
             providers.append(
                 {
                     "provider_id": str(provider_id),
@@ -875,7 +875,7 @@ class ControlPlaneService:
                     "failed": total - successful,
                     "success_rate": successful / total,
                     "validation_rate": validated / total,
-                    "average_latency_ms": float(average_latency or 0),
+                    "average_latency_ms": float(cast(SupportsFloat, average_latency or 0)),
                 }
             )
         return {
