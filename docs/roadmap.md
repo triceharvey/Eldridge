@@ -200,6 +200,12 @@ versioned bucket. Because Cloud Shell supplied Terraform 1.5.7, that evidence pl
 disposable version-only relaxation and is not eligible for apply; a fresh OpenTofu 1.9+ plan, exact
 cost review, and separate owner approval remain required.
 
+The follow-up compatible exercise used checksum-verified OpenTofu 1.12.6 and the signed, lock-file
+verified OCI provider 8.29.0 against merged `main`. Its saved plan reproduced eight creates and zero
+destructive actions and is revision- and SHA-256-bound in the Phase 5.9 acceptance record. Exact
+cost review, capacity revalidation, DNS selection, and separate approval of that plan fingerprint
+still gate any apply.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.
