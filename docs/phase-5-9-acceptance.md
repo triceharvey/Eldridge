@@ -53,13 +53,24 @@ domain and Arm64 Ubuntu image. A sanitized JSON inspection established:
 Cloud Shell supplied Terraform 1.5.7, below the repository's required 1.9+ runtime. The evidence
 plan therefore used a version-only relaxation in a disposable clone. That deviation did not alter
 the committed source, but it makes the saved plan ineligible for apply. OpenTofu remains the only
-authorized execution engine, and any later apply must use a fresh plan from a compatible runtime.
-No instance, VCN, subnet, gateway, route table, security list, volume, or bucket was created.
+authorized execution engine.
+
+A second planning exercise used the official OpenTofu 1.12.6 Linux Arm64 release after verifying
+its published SHA-256 checksum. OpenTofu rejected OCI's preinstalled provider binary because it did
+not match the committed lock file. It then installed the signed, checksum-pinned OCI provider
+8.29.0 from the OpenTofu registry and initialized without changing the source constraint or lock
+file.
+
+The compatible plan was generated from merged `main` revision
+`0ee1ee432a2886b80f42981f02beb11961fb6e2e`. Its sanitized JSON inspection reproduced the eight
+create actions, zero destructive actions, network boundary, private backup boundary, and capacity
+and cost assertions above. The saved 9,698-byte plan is identified by SHA-256
+`bb120bfb1f91ec364b7a75e2390459186979461dae67ff8e1c0a1178c4946786`. No instance, VCN, subnet,
+gateway, route table, security list, volume, or bucket was created.
 
 ## Remaining Activation Work
 
-The owner must still produce and inspect a fresh compatible OpenTofu plan, confirm its exact cost,
-choose a DNS name, and separately approve the exact saved plan before any apply. Capacity must be
-reconfirmed at apply time. A later activation slice must publish multi-architecture images, deploy
-the application, and collect all eight production-readiness observations. This acceptance is not
-hosted-production evidence.
+The owner must still confirm the exact cost, choose a DNS name, and separately approve the exact
+saved-plan fingerprint before any apply. Capacity must be reconfirmed at apply time. A later
+activation slice must publish multi-architecture images, deploy the application, and collect all
+eight production-readiness observations. This acceptance is not hosted-production evidence.

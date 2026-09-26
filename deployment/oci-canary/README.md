@@ -89,5 +89,22 @@ volume, or bucket was created.
 Cloud Shell supplied Terraform 1.5.7 rather than the repository's required OpenTofu/Terraform 1.9+
 runtime. The provider-backed plan therefore used a version-only relaxation in a disposable Cloud
 Shell clone and is evidence-only: it is not an apply candidate. The committed source constraint and
-OpenTofu execution policy were not changed. A fresh plan from a compatible OpenTofu runtime, exact
-cost confirmation, and a separate apply approval remain mandatory.
+OpenTofu execution policy were not changed.
+
+## Compatible OpenTofu plan checkpoint
+
+Later on 2026-09-26, the official OpenTofu 1.12.6 Linux Arm64 release was downloaded inside Cloud
+Shell and verified against its published SHA-256 checksum. OpenTofu rejected OCI's preinstalled
+provider binary because it did not match the committed lock file, then installed the signed,
+checksum-pinned OCI provider 8.29.0 from the OpenTofu registry. This preserved the fail-closed
+supply-chain boundary.
+
+A fresh checkout of merged `main` at revision
+`0ee1ee432a2886b80f42981f02beb11961fb6e2e` produced the exact saved OpenTofu plan. Sanitized JSON
+inspection again showed eight creates and zero destructive actions, the fixed A1 capacity, ports
+80/443 only, a private versioned bucket, and the USD 0 recurring boundary. The 9,698-byte plan has
+SHA-256 `bb120bfb1f91ec364b7a75e2390459186979461dae67ff8e1c0a1178c4946786`.
+
+The saved plan remains only in the authenticated Cloud Shell workspace and is ignored by Git. No
+apply occurred. Exact cost confirmation, capacity revalidation, and a separate approval of this
+specific revision and plan fingerprint remain mandatory.
