@@ -4,7 +4,7 @@ variable "region" {
 
   validation {
     condition     = can(regex("^[a-z]{2}-[a-z]+-[0-9]+$", var.region))
-    error_message = "region must be an OCI region identifier such as us-phoenix-1."
+    error_message = "region must be an OCI region identifier such as us-sanjose-1."
   }
 }
 

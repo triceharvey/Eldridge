@@ -1,10 +1,10 @@
 mock_provider "oci" {}
 
 variables {
-  region                            = "us-phoenix-1"
+  region                            = "us-sanjose-1"
   compartment_id                    = "ocid1.compartment.oc1..test"
-  availability_domain               = "TEST:PHX-AD-1"
-  image_id                          = "ocid1.image.oc1.phx.test"
+  availability_domain               = "TEST:US-SANJOSE-1-AD-1"
+  image_id                          = "ocid1.image.oc1.us-sanjose-1.test"
   object_storage_namespace          = "eldridgetest"
   backup_bucket_name                = "eldridge-canary-test-backups"
   release_revision                  = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

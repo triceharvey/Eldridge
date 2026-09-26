@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 PROFILE = Path(__file__).parents[1] / "deployment" / "oci-canary"
+ROOT = Path(__file__).parents[1]
 
 
 def test_profile_is_bounded_to_always_free_capacity() -> None:
@@ -38,6 +39,15 @@ def test_example_fails_closed_without_operator_confirmation() -> None:
     assert "confirmed_home_region          = false" in example
     assert "confirmed_always_free_eligibility = false" in example
     assert "replace-me" in example
+
+
+def test_live_planning_artifacts_are_ignored() -> None:
+    gitignore = (ROOT / ".gitignore").read_text()
+
+    assert "*.tfvars" in gitignore
+    assert "!*.tfvars.example" in gitignore
+    assert "*.tfplan" in gitignore
+    assert "*.tfstate" in gitignore
 
 
 def test_mock_provider_plan_passes_without_oci_credentials(tmp_path: Path) -> None:
