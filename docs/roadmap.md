@@ -193,6 +193,13 @@ Free eligibility require explicit operator confirmation. OpenTofu and Terraform 
 prove the plan graph without credentials, API calls, state, or resources; real planning and apply
 remain separately gated.
 
+The San Jose tenancy, Always Free eligibility, dedicated canary compartment, and provider-backed
+resource graph have now been verified. The authenticated Cloud Shell plan contained eight creates,
+zero destructive actions, the fixed A1 capacity envelope, only ports 80/443, and a private
+versioned bucket. Because Cloud Shell supplied Terraform 1.5.7, that evidence plan used a
+disposable version-only relaxation and is not eligible for apply; a fresh OpenTofu 1.9+ plan, exact
+cost review, and separate owner approval remain required.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.

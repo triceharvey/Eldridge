@@ -64,7 +64,8 @@ separate database and worker failure domains once real usage justifies it.
 
 ## Live eligibility checkpoint
 
-On 2026-09-25, the owner tenancy was inspected without creating resources. The console confirmed:
+On 2026-09-25, the owner tenancy was inspected without creating workload resources. The console
+confirmed:
 
 - the tenancy home region is `us-sanjose-1` (US West, San Jose);
 - `VM.Standard.A1.Flex` is selectable and marked **Always Free-eligible**;
@@ -75,5 +76,18 @@ On 2026-09-25, the owner tenancy was inspected without creating resources. The c
 This checkpoint establishes console eligibility, not host capacity at apply time and not a final
 price guarantee. No instance, VCN, subnet, volume, bucket, or other workload resource was created
 during the inspection. On 2026-09-26, the zero-cost `eldridge-canary` IAM compartment was created as
-the isolation boundary for the provider-backed plan. A sanitized JSON review, exact cost
-confirmation, and a separate apply approval remain mandatory.
+the isolation boundary for the provider-backed plan.
+
+The signed-in OCI Cloud Shell then produced an authenticated, provider-backed planning result in
+`us-sanjose-1`. Its sanitized JSON review showed eight creates and zero destructive actions. The
+planned instance remained `VM.Standard.A1.Flex` at 2 OCPUs and 12 GB memory with a 50 GB boot
+volume; the only public ingress was TCP 80 and 443; the Object Storage bucket was private and
+versioned; and the embedded boundary remained USD 0 recurring with at most USD 5 for the temporary
+exercise. No plan was applied and no instance, VCN, subnet, gateway, route table, security list,
+volume, or bucket was created.
+
+Cloud Shell supplied Terraform 1.5.7 rather than the repository's required OpenTofu/Terraform 1.9+
+runtime. The provider-backed plan therefore used a version-only relaxation in a disposable Cloud
+Shell clone and is evidence-only: it is not an apply candidate. The committed source constraint and
+OpenTofu execution policy were not changed. A fresh plan from a compatible OpenTofu runtime, exact
+cost confirmation, and a separate apply approval remain mandatory.
