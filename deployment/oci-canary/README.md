@@ -133,6 +133,15 @@ zero-destructive action boundary, zero-dollar inputs, A1 visibility, and image a
 revalidated. OCI again rejected the launch with `500-InternalError: Out of host capacity`.
 
 Post-failure reconciliation found the same seven tracked objects, zero instances, and zero boot
-volumes. No additional retry, teardown, DNS, TLS, or application deployment occurred. A future
-retry or controlled teardown requires a new owner decision; DNS and production TLS remain
-deferred.
+volumes. No additional retry, DNS, TLS, or application deployment occurred.
+
+## Controlled teardown checkpoint
+
+The owner separately approved the destroy-only saved plan with SHA-256
+`5157cf37a7adb1b32b7cfc1758586edcaca727d74f823b2bf7ed6a31a2f1721b` on 2026-09-27. Immediate
+preflight confirmed seven deletes, zero creates, zero updates, an empty backup bucket, and no
+instance. OpenTofu then completed with `0 added, 0 changed, 7 destroyed`.
+
+Independent post-destroy checks found empty OpenTofu state and zero VCNs, buckets, instances, and
+boot volumes in the dedicated canary compartment. The compartment itself remains available for a
+future separately approved exercise. DNS, TLS, and application deployment were never created.

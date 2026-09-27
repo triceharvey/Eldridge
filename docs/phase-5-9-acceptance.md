@@ -120,12 +120,22 @@ Reconciliation confirmed seven objects still tracked in OpenTofu state, zero ins
 boot volumes in the canary compartment. No further retry, configuration change, teardown, DNS,
 TLS, or application deployment occurred.
 
+## Controlled Teardown
+
+The owner separately approved the destroy-only saved plan with SHA-256
+`5157cf37a7adb1b32b7cfc1758586edcaca727d74f823b2bf7ed6a31a2f1721b` on 2026-09-27. Action-time
+preflight confirmed seven deletes, zero creates, zero updates, seven tracked objects, an empty
+backup bucket, and no instance. OpenTofu reported `0 added, 0 changed, 7 destroyed`.
+
+Independent verification then reported zero OpenTofu state objects, VCNs, buckets, instances, and
+boot volumes in the canary compartment. The dedicated IAM compartment was outside the plan and is
+intentionally retained. No DNS, TLS, or application workload existed to remove.
+
 ## Remaining Activation Work
 
-The approved one-time recovery attempt is complete. The owner must now choose between a newly
-planned capacity retry and controlled teardown of the seven temporary objects. Either action
-requires separate approval; another retry cannot reuse the consumed approval. Always Free
-eligibility and capacity must be reconfirmed before a new plan is proposed. DNS selection,
-production TLS, multi-architecture image publication, application deployment, and all eight
-production-readiness observations remain later activation work. This acceptance is not
+The approved one-time recovery attempt and controlled teardown are complete. Any future hosted
+attempt requires a new plan and separate approval; it cannot reuse either consumed approval.
+Always Free eligibility and capacity must be reconfirmed before another plan is proposed. DNS
+selection, production TLS, multi-architecture image publication, application deployment, and all
+eight production-readiness observations remain later activation work. This acceptance is not
 hosted-production evidence.

@@ -217,7 +217,10 @@ teardown remain separate owner decisions. The owner subsequently approved the ex
 fingerprint under the USD 0 maximum. After all preflight invariants passed, OCI again returned
 `Out of host capacity`. Reconciliation confirmed the same seven tracked objects, zero instances,
 and zero boot volumes. No further retry or teardown occurred, and either next action requires a
-new owner decision.
+new owner decision. The owner then separately approved a destroy-only plan fingerprint. OpenTofu
+destroyed all seven tracked objects, and independent verification found empty state plus zero VCNs,
+buckets, instances, and boot volumes in the canary compartment. The IAM compartment remains for a
+future separately approved exercise; no hosted workload is active.
 
 ## Rough completion estimate
 
