@@ -110,3 +110,15 @@ The saved plan remains only in the authenticated Cloud Shell workspace and is ig
 apply occurred. It is now ineligible for apply because its USD 5 temporary boundary is broader than
 the owner's current USD 0 maximum. DNS and production TLS are deferred; a replacement plan must
 encode both zero-dollar ceilings and receive separate exact-fingerprint approval.
+
+## Zero-dollar replacement plan checkpoint
+
+On 2026-09-27, a fresh checkout of merged `main` revision
+`ae38fe034d2e890231b364736b2b3f479b80ea2b` passed OpenTofu validation and all three mocked plan
+tests, including rejection of a nonzero temporary budget. The authenticated replacement plan
+contained eight creates and zero destructive actions, both cost ceilings at USD 0, the fixed A1
+capacity envelope, only ports 80/443, and a private versioned bucket. Its 9,707-byte saved plan has
+SHA-256 `b0b44b594630a9e754e6cb1fd3f5ad4cfcafd3529a7eb4395d6be8f0149417da`.
+
+The plan remains unapplied in OCI Cloud Shell. DNS and production TLS remain deferred. Always Free
+eligibility and capacity must be reconfirmed immediately before any separately approved apply.
