@@ -127,5 +127,12 @@ capacity`. Reconciliation found the seven objects in OpenTofu state and no insta
 
 A refreshed 15,288-byte plan contains only the original VM create action and zero destructive
 actions. It preserves both USD 0 ceilings and has SHA-256
-`c14fdf76fbfa12062dc8e6adba6e56b4af95a99b81d2943a227305b521d86f65`. No retry or teardown is
-authorized by this evidence. DNS and production TLS remain deferred.
+`c14fdf76fbfa12062dc8e6adba6e56b4af95a99b81d2943a227305b521d86f65`. The owner approved that
+exact recovery plan, and it was applied once on 2026-09-27 after the fingerprint, one-create and
+zero-destructive action boundary, zero-dollar inputs, A1 visibility, and image availability were
+revalidated. OCI again rejected the launch with `500-InternalError: Out of host capacity`.
+
+Post-failure reconciliation found the same seven tracked objects, zero instances, and zero boot
+volumes. No additional retry, teardown, DNS, TLS, or application deployment occurred. A future
+retry or controlled teardown requires a new owner decision; DNS and production TLS remain
+deferred.
