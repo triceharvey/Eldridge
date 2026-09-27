@@ -153,10 +153,10 @@ The owner approved a zero-dollar local Docker/k3d target on 2026-09-08. The impl
 deny-by-default credential broker, a metadata-only fake broker, and an explicitly enabled local
 Kubernetes TokenRequest broker. The real broker validates exact request and returned-token
 bindings, discards the token, and exposes only sanitized handle metadata. SPIFFE/SPIRE is deferred
-until cross-workload federation is justified. A temporary hosted exercise has a separate maximum
-total budget of approximately USD 5 and still requires a selected provider, exact plan, and
-execution approval before any resource is created. Azure and persistent hosted K3s remain future
-alternatives.
+until cross-workload federation is justified. A temporary hosted exercise now has a USD 0 maximum
+and still requires a selected provider, exact plan, and execution approval before any resource is
+created. Any item not confirmed free aborts the exercise. Azure and persistent hosted K3s remain
+future alternatives.
 
 The saved-plan validation slice is implemented with pinned CLI/provider policy, exact resource
 and action allowlists, destructive-change and drift rejection, sensitive-artifact containment,

@@ -83,7 +83,8 @@ The signed-in OCI Cloud Shell then produced an authenticated, provider-backed pl
 planned instance remained `VM.Standard.A1.Flex` at 2 OCPUs and 12 GB memory with a 50 GB boot
 volume; the only public ingress was TCP 80 and 443; the Object Storage bucket was private and
 versioned; and the embedded boundary remained USD 0 recurring with at most USD 5 for the temporary
-exercise. No plan was applied and no instance, VCN, subnet, gateway, route table, security list,
+exercise. That historical plan was later superseded when the owner reduced the temporary ceiling
+to USD 0. No plan was applied and no instance, VCN, subnet, gateway, route table, security list,
 volume, or bucket was created.
 
 Cloud Shell supplied Terraform 1.5.7 rather than the repository's required OpenTofu/Terraform 1.9+
@@ -106,5 +107,6 @@ inspection again showed eight creates and zero destructive actions, the fixed A1
 SHA-256 `bb120bfb1f91ec364b7a75e2390459186979461dae67ff8e1c0a1178c4946786`.
 
 The saved plan remains only in the authenticated Cloud Shell workspace and is ignored by Git. No
-apply occurred. Exact cost confirmation, capacity revalidation, and a separate approval of this
-specific revision and plan fingerprint remain mandatory.
+apply occurred. It is now ineligible for apply because its USD 5 temporary boundary is broader than
+the owner's current USD 0 maximum. DNS and production TLS are deferred; a replacement plan must
+encode both zero-dollar ceilings and receive separate exact-fingerprint approval.

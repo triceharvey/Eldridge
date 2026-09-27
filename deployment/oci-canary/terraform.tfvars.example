@@ -8,7 +8,7 @@ release_revision               = "0000000000000000000000000000000000000000"
 confirmed_home_region          = false
 confirmed_always_free_eligibility = false
 monthly_budget_usd             = 0
-temporary_total_budget_usd     = 5
+temporary_total_budget_usd     = 0
 
 freeform_tags = {
   owner   = "triceharvey"

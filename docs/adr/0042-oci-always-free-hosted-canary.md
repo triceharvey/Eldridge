@@ -6,8 +6,8 @@
 
 ## Context
 
-Eldridge needs real hosted evidence without converting its temporary approximately USD 5 exercise
-into an open-ended bill. Azure and AWS provide valuable professional experience, but their broad
+Eldridge needs real hosted evidence without accepting any infrastructure charge. Azure and AWS
+provide valuable professional experience, but their broad
 free-account benefits are time-limited or credit-backed. OCI documents a persistent Always Free
 allocation that includes Ampere A1 compute, block and object storage, load balancing, secrets,
 monitoring, and networking suitable for a small proof of concept.
@@ -20,9 +20,9 @@ a private versioned Object Storage bucket. OpenTofu is the authorized engine; Te
 compatible for professional practice but receives no apply authority.
 
 The configuration fails planning unless the operator explicitly confirms the OCI home region and
-the console's Always Free eligibility labels. It fixes recurring budget at USD 0 and bounds the
-separately approved temporary exercise at USD 5. Tests use a mocked provider and cannot create OCI
-resources.
+the console's Always Free eligibility labels. It fixes both recurring and temporary hosted budgets
+at USD 0. If an item cannot be confirmed free, the operator must abort. Tests use a mocked provider
+and cannot create OCI resources.
 
 ## Consequences
 
@@ -31,7 +31,8 @@ resources.
 - API, worker, ingress, and PostgreSQL initially share one VM, so the canary is not highly available.
 - Encrypted database backups must be copied to Object Storage and restored as part of acceptance.
 - Capacity is not guaranteed, and idle Always Free instances may be reclaimed by Oracle.
-- Account creation, credentials, DNS, a real plan, and any apply remain separate owner actions.
+- Account creation, credentials, a real plan, and any apply remain separate owner actions. DNS and
+  production TLS are explicitly deferred; infrastructure validation may use the instance public IP.
 
 ## Rejected Alternatives
 

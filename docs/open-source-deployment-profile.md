@@ -37,10 +37,10 @@ must be justified by a demonstrated need rather than installed as a platform bun
 - Current Phase 4.2 infrastructure ceiling: USD 0 incremental spend.
 - Local Docker, PostgreSQL, fake credentials, OpenTofu validation, and optional ephemeral k3d
   use the owner's existing machine.
-- A later temporary hosted exercise may spend no more than approximately USD 5 total. It is a
-  separately planned and approved validation event, not a recurring monthly authorization.
-- The provider resource must be destroyed after evidence capture; stopping a billed VM is not
-  sufficient unless the provider explicitly stops billing it.
+- The first temporary hosted exercise also has a USD 0 ceiling. It is a separately planned and
+  approved validation event, not an authorization to consume credits or incur charges.
+- Any resource not confirmed free must be rejected; temporary resources must be removed after
+  evidence capture.
 - Azure managed services and persistent hosted K3s remain alternatives for future measured
   needs.
 
