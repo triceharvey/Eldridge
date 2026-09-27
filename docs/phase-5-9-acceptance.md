@@ -73,13 +73,31 @@ gateway, route table, security list, volume, or bucket was created.
 On 2026-09-27, the owner reduced the temporary hosted ceiling from USD 5 to USD 0 and explicitly
 deferred DNS and production TLS until after infrastructure validation. That decision makes plan
 `bb120bfb1f91ec364b7a75e2390459186979461dae67ff8e1c0a1178c4946786` obsolete and ineligible for
-apply even though it created no resources. A replacement plan must prove both cost ceilings are
-zero and must be separately approved by its exact fingerprint.
+apply even though it created no resources.
+
+## Zero-Dollar Replacement Plan
+
+A fresh checkout of merged `main` revision
+`ae38fe034d2e890231b364736b2b3f479b80ea2b` produced a replacement plan with OpenTofu 1.12.6 and
+the signed OCI provider 8.29.0. OpenTofu validation and all three mocked plan tests passed before
+the authenticated plan. Sanitized JSON inspection established:
+
+- eight create actions and zero destructive actions;
+- both monthly and temporary hosted ceilings fixed at USD 0;
+- one `VM.Standard.A1.Flex` instance fixed at 2 OCPUs and 12 GB memory;
+- one 50 GB boot volume with legacy IMDS endpoints disabled;
+- public TCP ingress limited to ports 80 and 443; and
+- a `NoPublicAccess`, version-enabled Object Storage backup bucket.
+
+The saved 9,707-byte plan is identified by SHA-256
+`b0b44b594630a9e754e6cb1fd3f5ad4cfcafd3529a7eb4395d6be8f0149417da`. It remains only in the
+authenticated Cloud Shell workspace. No instance, VCN, subnet, gateway, route table, security
+list, volume, or bucket was created.
 
 ## Remaining Activation Work
 
-The owner must still confirm that every item is free and separately approve the exact replacement
-plan fingerprint before any apply. Capacity must be reconfirmed at apply time. The first
+The owner must still separately approve the exact zero-dollar plan fingerprint before any apply.
+Always Free eligibility and capacity must be reconfirmed at apply time. The first
 infrastructure canary may be observed through its public IP; DNS selection, production TLS,
 multi-architecture image publication, application deployment, and all eight production-readiness
 observations remain later activation work. This acceptance is not hosted-production evidence.

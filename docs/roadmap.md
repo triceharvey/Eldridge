@@ -206,8 +206,10 @@ destructive actions and is revision- and SHA-256-bound in the Phase 5.9 acceptan
 cost review, capacity revalidation, and separate approval of that plan fingerprint still gate any
 apply. The owner subsequently reduced both recurring and temporary hosted ceilings to USD 0 and
 deferred DNS and production TLS until the infrastructure canary is validated. The earlier saved
-plan is therefore obsolete and cannot be applied; a new OpenTofu plan must encode the stricter
-boundary.
+plan is therefore obsolete and cannot be applied. A replacement plan from merged `main` now
+encodes both USD 0 ceilings and reproduces the eight-create, zero-destructive-action boundary; its
+revision and SHA-256 fingerprint are recorded in the Phase 5.9 acceptance record. Apply remains a
+separate owner decision after immediate eligibility and capacity revalidation.
 
 ## Rough completion estimate
 
