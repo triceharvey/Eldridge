@@ -213,7 +213,11 @@ separate owner decision after immediate eligibility and capacity revalidation. T
 that exact plan, but OCI returned `Out of host capacity` for the A1 instance after creating the
 seven network, safety, and backup objects. State reconciliation found no instance. A one-create,
 zero-destructive-action retry plan is fingerprinted in the acceptance record; retry and controlled
-teardown remain separate owner decisions.
+teardown remain separate owner decisions. The owner subsequently approved the exact retry
+fingerprint under the USD 0 maximum. After all preflight invariants passed, OCI again returned
+`Out of host capacity`. Reconciliation confirmed the same seven tracked objects, zero instances,
+and zero boot volumes. No further retry or teardown occurred, and either next action requires a
+new owner decision.
 
 ## Rough completion estimate
 

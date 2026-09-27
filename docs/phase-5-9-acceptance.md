@@ -109,10 +109,23 @@ budgets, revision, image, and 2 OCPU/12 GB/50 GB capacity boundary. Its 15,288-b
 identified by SHA-256
 `c14fdf76fbfa12062dc8e6adba6e56b4af95a99b81d2943a227305b521d86f65`.
 
+## Controlled Capacity Retry
+
+The owner approved that exact recovery-plan fingerprint under the USD 0 maximum on 2026-09-27.
+Preflight revalidated the fingerprint, single create action, zero destructive actions, zero-dollar
+inputs, source revision, A1 shape visibility, and `AVAILABLE` image state. The single apply again
+failed at `oci_core_instance.canary` with `500-InternalError: Out of host capacity`.
+
+Reconciliation confirmed seven objects still tracked in OpenTofu state, zero instances, and zero
+boot volumes in the canary compartment. No further retry, configuration change, teardown, DNS,
+TLS, or application deployment occurred.
+
 ## Remaining Activation Work
 
-The owner must choose between a later exact-fingerprint capacity retry and controlled teardown of
-the seven temporary objects. Either action requires separate approval. Always Free eligibility and
-capacity must be reconfirmed before a retry. DNS selection, production TLS, multi-architecture
-image publication, application deployment, and all eight production-readiness observations remain
-later activation work. This acceptance is not hosted-production evidence.
+The approved one-time recovery attempt is complete. The owner must now choose between a newly
+planned capacity retry and controlled teardown of the seven temporary objects. Either action
+requires separate approval; another retry cannot reuse the consumed approval. Always Free
+eligibility and capacity must be reconfirmed before a new plan is proposed. DNS selection,
+production TLS, multi-architecture image publication, application deployment, and all eight
+production-readiness observations remain later activation work. This acceptance is not
+hosted-production evidence.
