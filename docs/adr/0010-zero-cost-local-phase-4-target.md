@@ -18,9 +18,10 @@ Kubernetes-specific evidence. Set the incremental infrastructure ceiling to USD 
 OpenTofu for provider-neutral planning, a deny-by-default credential broker, and a
 metadata-only fake credential broker before qualifying a local workload-identity mechanism.
 
-A later temporary hosted validation exercise may have a maximum total budget of approximately
-USD 5. That ceiling is not recurring authorization: the provider, exact resource plan, expected
-duration, identity policy, and destruction procedure require a separate execution decision.
+The first hosted validation exercise also has a USD 0 maximum. If any selected resource cannot be
+confirmed as free before apply, the exercise must stop rather than consume trial credits or incur
+a charge. Any future nonzero ceiling requires a new architecture decision plus approval of the
+provider, exact resource plan, expected duration, identity policy, and destruction procedure.
 Azure managed services and persistent hosted K3s remain alternatives for future measured need.
 
 ## Consequences
@@ -29,8 +30,8 @@ Azure managed services and persistent hosted K3s remain alternatives for future 
 - Local evidence does not establish public availability, cloud IAM behavior, or managed-service
   recovery.
 - k3d is optional; Docker Compose remains the smaller baseline when Kubernetes adds no evidence.
-- A hosted exercise must destroy billable resources after evidence capture and verify that
-  billing has stopped.
+- A hosted exercise must reject a plan containing any expected charge and remove temporary
+  resources after evidence capture.
 - Cost alternatives are reviewed at Phase 4 exits, but review never authorizes spending.
 
 ## Rejected alternatives

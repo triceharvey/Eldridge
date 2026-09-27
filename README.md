@@ -108,9 +108,9 @@ infrastructure ceiling. OpenTofu is the provider-neutral infrastructure layer. A
 credential broker prevents accidental issuance, while a policy-bound fake broker returns only
 simulated issuance metadata: it creates no token, exposes no secret, and contacts no issuer.
 
-A later temporary hosted exercise is capped at approximately USD 5 total and remains subject to
-a separate provider, plan, and execution decision. Azure and persistent hosted K3s remain future
-alternatives rather than active dependencies.
+The first temporary hosted exercise is also capped at USD 0 and remains subject to a separate
+provider, plan, and execution decision. Any item not confirmed free aborts the exercise. Azure and
+persistent hosted K3s remain future alternatives rather than active dependencies.
 
 The first OpenTofu validator now produces sanitized, digest-bound evidence from JSON plan
 fixtures and rejects unpinned providers, destructive actions, imports, provisioners, child

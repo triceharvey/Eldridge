@@ -72,5 +72,5 @@ def test_mock_provider_plan_passes_without_oci_credentials(tmp_path: Path) -> No
         timeout=60,
     )
 
-    assert b"Success! 2 passed, 0 failed." in result.stdout
+    assert b"Success! 3 passed, 0 failed." in result.stdout
     assert not list(profile.glob("*.tfstate*"))

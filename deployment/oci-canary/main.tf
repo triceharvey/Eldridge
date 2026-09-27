@@ -35,7 +35,7 @@ resource "terraform_data" "safety_boundary" {
     }
 
     precondition {
-      condition     = var.monthly_budget_usd == 0 && var.temporary_total_budget_usd <= 5
+      condition     = var.monthly_budget_usd == 0 && var.temporary_total_budget_usd == 0
       error_message = "The plan exceeds Eldridge's authorized hosted-cost boundary."
     }
   }

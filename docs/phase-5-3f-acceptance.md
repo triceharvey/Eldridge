@@ -26,8 +26,9 @@ recovery responsibilities have a focused internal boundary.
 
 This is an internal modular-monolith refactor. It does not enable local deployment, contact a live
 cluster, run the destructive k3d exercise, provision hosted infrastructure, or spend provider/cloud
-funds. The USD 0 default and separate approximately USD 5 future hosted exercise authorization remain
-unchanged. Windsurf integration decomposition and the authorized real-model vertical slice remain.
+funds. The USD 0 default remains unchanged. A later owner decision superseded the former USD 5
+future hosted allowance with a USD 0 hosted ceiling. Windsurf integration decomposition and the
+authorized real-model vertical slice remain.
 
 ```bash
 .venv/bin/ruff check .

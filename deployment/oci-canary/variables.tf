@@ -93,12 +93,12 @@ variable "monthly_budget_usd" {
 
 variable "temporary_total_budget_usd" {
   type        = number
-  description = "Separately approved maximum for a temporary hosted exercise."
-  default     = 5
+  description = "Maximum temporary hosted spend allowed by this zero-cost canary profile."
+  default     = 0
 
   validation {
-    condition     = var.temporary_total_budget_usd >= 0 && var.temporary_total_budget_usd <= 5
-    error_message = "temporary_total_budget_usd must remain between zero and five dollars."
+    condition     = var.temporary_total_budget_usd == 0
+    error_message = "The OCI canary profile requires a temporary_total_budget_usd value of zero."
   }
 }
 

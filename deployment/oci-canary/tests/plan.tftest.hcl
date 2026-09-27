@@ -11,7 +11,7 @@ variables {
   confirmed_home_region             = true
   confirmed_always_free_eligibility = true
   monthly_budget_usd                = 0
-  temporary_total_budget_usd        = 5
+  temporary_total_budget_usd        = 0
 }
 
 run "always_free_plan" {
@@ -51,6 +51,11 @@ run "always_free_plan" {
     condition     = terraform_data.safety_boundary.input.monthly_budget_usd == 0
     error_message = "The recurring budget must remain zero dollars."
   }
+
+  assert {
+    condition     = terraform_data.safety_boundary.input.temporary_total_budget_usd == 0
+    error_message = "The temporary hosted budget must remain zero dollars."
+  }
 }
 
 run "reject_unconfirmed_free_tier" {
@@ -61,4 +66,14 @@ run "reject_unconfirmed_free_tier" {
   }
 
   expect_failures = [terraform_data.safety_boundary]
+}
+
+run "reject_nonzero_temporary_budget" {
+  command = plan
+
+  variables {
+    temporary_total_budget_usd = 1
+  }
+
+  expect_failures = [var.temporary_total_budget_usd]
 }
