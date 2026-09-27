@@ -209,7 +209,11 @@ deferred DNS and production TLS until the infrastructure canary is validated. Th
 plan is therefore obsolete and cannot be applied. A replacement plan from merged `main` now
 encodes both USD 0 ceilings and reproduces the eight-create, zero-destructive-action boundary; its
 revision and SHA-256 fingerprint are recorded in the Phase 5.9 acceptance record. Apply remains a
-separate owner decision after immediate eligibility and capacity revalidation.
+separate owner decision after immediate eligibility and capacity revalidation. The owner approved
+that exact plan, but OCI returned `Out of host capacity` for the A1 instance after creating the
+seven network, safety, and backup objects. State reconciliation found no instance. A one-create,
+zero-destructive-action retry plan is fingerprinted in the acceptance record; retry and controlled
+teardown remain separate owner decisions.
 
 ## Rough completion estimate
 
