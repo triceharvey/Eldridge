@@ -91,13 +91,28 @@ the authenticated plan. Sanitized JSON inspection established:
 
 The saved 9,707-byte plan is identified by SHA-256
 `b0b44b594630a9e754e6cb1fd3f5ad4cfcafd3529a7eb4395d6be8f0149417da`. It remains only in the
-authenticated Cloud Shell workspace. No instance, VCN, subnet, gateway, route table, security
-list, volume, or bucket was created.
+authenticated Cloud Shell workspace.
+
+## First Controlled Apply Attempt
+
+The owner approved that exact fingerprint under the USD 0 maximum on 2026-09-27. Immediately
+before apply, the fingerprint, revision, action counts, zero-dollar inputs, A1 shape visibility,
+and `AVAILABLE` image state were revalidated. OpenTofu created and recorded the safety marker,
+VCN, internet gateway, route table, security list, public subnet, and private versioned bucket.
+OCI then rejected the instance launch with `500-InternalError: Out of host capacity`.
+
+Reconciliation confirmed those seven objects in OpenTofu state and no instance in the canary
+compartment. No automatic retry, configuration change, DNS record, TLS setup, application
+deployment, or teardown occurred. A refreshed recovery plan contains only the original
+`oci_core_instance.canary` create action, no change or destructive action, and the same USD 0
+budgets, revision, image, and 2 OCPU/12 GB/50 GB capacity boundary. Its 15,288-byte saved plan is
+identified by SHA-256
+`c14fdf76fbfa12062dc8e6adba6e56b4af95a99b81d2943a227305b521d86f65`.
 
 ## Remaining Activation Work
 
-The owner must still separately approve the exact zero-dollar plan fingerprint before any apply.
-Always Free eligibility and capacity must be reconfirmed at apply time. The first
-infrastructure canary may be observed through its public IP; DNS selection, production TLS,
-multi-architecture image publication, application deployment, and all eight production-readiness
-observations remain later activation work. This acceptance is not hosted-production evidence.
+The owner must choose between a later exact-fingerprint capacity retry and controlled teardown of
+the seven temporary objects. Either action requires separate approval. Always Free eligibility and
+capacity must be reconfirmed before a retry. DNS selection, production TLS, multi-architecture
+image publication, application deployment, and all eight production-readiness observations remain
+later activation work. This acceptance is not hosted-production evidence.

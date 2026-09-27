@@ -120,5 +120,12 @@ contained eight creates and zero destructive actions, both cost ceilings at USD 
 capacity envelope, only ports 80/443, and a private versioned bucket. Its 9,707-byte saved plan has
 SHA-256 `b0b44b594630a9e754e6cb1fd3f5ad4cfcafd3529a7eb4395d6be8f0149417da`.
 
-The plan remains unapplied in OCI Cloud Shell. DNS and production TLS remain deferred. Always Free
-eligibility and capacity must be reconfirmed immediately before any separately approved apply.
+The exact plan was approved and applied on 2026-09-27 after its fingerprint, inputs, shape, and
+image were revalidated. The safety marker, VCN, internet gateway, route table, security list,
+subnet, and private versioned bucket were created, but OCI rejected the VM with `Out of host
+capacity`. Reconciliation found the seven objects in OpenTofu state and no instance.
+
+A refreshed 15,288-byte plan contains only the original VM create action and zero destructive
+actions. It preserves both USD 0 ceilings and has SHA-256
+`c14fdf76fbfa12062dc8e6adba6e56b4af95a99b81d2943a227305b521d86f65`. No retry or teardown is
+authorized by this evidence. DNS and production TLS remain deferred.
