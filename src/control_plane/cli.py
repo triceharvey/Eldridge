@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+from control_plane.audit_export import build_audit_export, verify_audit_export
 from control_plane.config import Settings
 from control_plane.domain import ApprovalAction, ApprovalDecision, WorkflowState
 from control_plane.operator_workflow import (
@@ -13,6 +14,7 @@ from control_plane.operator_workflow import (
     drive_operator_workflow,
     preflight_operator_workflow,
 )
+from control_plane.persistence import make_engine, make_session_factory
 from control_plane.production_readiness import evaluate_production_readiness_file
 from control_plane.runtime import build_runtime
 
@@ -87,6 +89,14 @@ def main() -> None:
             command_parser.add_argument("--create-schema", action="store_true")
             command_parser.add_argument("--confirm-execution", action="store_true")
             command_parser.add_argument("--confirm-external-egress", action="store_true")
+    audit = subparsers.add_parser("audit", help="export or verify portable workflow evidence")
+    audit_subparsers = audit.add_subparsers(dest="audit_command", required=True)
+    audit_export = audit_subparsers.add_parser("export")
+    audit_export.add_argument("--database-url", required=True)
+    audit_export.add_argument("--workflow-id", required=True)
+    audit_export.add_argument("--output", type=Path, required=True)
+    audit_verify = audit_subparsers.add_parser("verify")
+    audit_verify.add_argument("--bundle", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
@@ -97,6 +107,49 @@ def main() -> None:
             raise SystemExit(str(error)) from error
         print(json.dumps(report, indent=2, sort_keys=True))
         raise SystemExit(0 if report["ready"] else 2)
+    if args.command == "audit":
+        if args.audit_command == "verify":
+            try:
+                payload = json.loads(args.bundle.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as error:
+                raise SystemExit("audit bundle is unreadable or invalid JSON") from error
+            valid = verify_audit_export(payload)
+            print(
+                json.dumps(
+                    {"bundle": str(args.bundle), "valid": valid},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            raise SystemExit(0 if valid else 2)
+        if args.output.exists():
+            raise SystemExit("audit export output already exists")
+        if not args.output.parent.is_dir():
+            raise SystemExit("audit export parent directory does not exist")
+        engine = make_engine(args.database_url)
+        try:
+            with make_session_factory(engine)() as session:
+                bundle = build_audit_export(session, args.workflow_id)
+            args.output.write_text(
+                json.dumps(bundle, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except (OSError, ValueError) as error:
+            raise SystemExit(str(error)) from error
+        finally:
+            engine.dispose()
+        print(
+            json.dumps(
+                {
+                    "bundle_digest": bundle["bundle_digest"],
+                    "output": str(args.output),
+                    "workflow_id": args.workflow_id,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        raise SystemExit(0)
     if args.command == "workflow":
         manifest = OperatorWorkflowManifest.from_file(args.manifest)
         preflight = preflight_operator_workflow(

@@ -222,6 +222,13 @@ destroyed all seven tracked objects, and independent verification found empty st
 buckets, instances, and boot volumes in the canary compartment. The IAM compartment remains for a
 future separately approved exercise; no hosted workload is active.
 
+Phase 5.10A begins the justified multi-project adoption work with portable audit and quality-evidence
+bundles. A local operator can export one repository-scoped workflow's task and attempt outcomes,
+artifact digests, CI evidence, and complete audit chain without exporting model output, credentials,
+lease tokens, or repository content. Offline verification checks the bundle digest and every event
+link. Production authenticity still requires the printed digest to be retained in an independently
+protected or immutable system.
+
 ## Rough completion estimate
 
 The planned local engineering work through Phase 4 is complete. Phase 2 still awaits optional paid-provider policy approval and live canaries, while Phase 3 hosted operational evidence requires an actual environment. Phase 5 is intentionally evidence-gated: scaling, quotas, multi-tenancy, and stronger hosted operations should be implemented only when a real use case demonstrates the need.
