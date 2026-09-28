@@ -64,3 +64,8 @@ onboarded now through the registry and the manifest-bound operator command. Remo
 wait for the operator-specific activation evidence listed in `deployment/README.md`.
 
 Provider performance evidence is currently partitioned by provider, model, profile version, and task capability. Before cross-project automatic optimization, Phase 3/5 should add repository and evaluation-suite cohorts so success on one technology stack does not create unjustified trust on another.
+
+After each governed workflow, export its project-bound audit and quality evidence using
+[`audit-exports.md`](audit-exports.md). Keep the bundle under controls appropriate to the workflow's
+data classification and record its digest in an independently protected system. The export carries
+evidence metadata and digests, not model output, credentials, or repository content.

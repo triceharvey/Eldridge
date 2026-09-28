@@ -263,6 +263,7 @@ CONTROL_PLANE_TEST_DATABASE_URL='postgresql+psycopg://control_plane:control_plan
 - [Phase 5.9 OCI hosted-canary plan acceptance](docs/phase-5-9-acceptance.md)
 - [Ephemeral k3d identity-boundary validation](docs/k3d-identity-validation.md)
 - [Onboarding other projects](docs/project-onboarding.md)
+- [Portable audit and quality-evidence bundles](docs/audit-exports.md)
 - [Proposed data model](docs/data-model.md)
 - [Threat model](docs/threat-model.md)
 - [Failure modes and recovery](docs/failure-recovery.md)
