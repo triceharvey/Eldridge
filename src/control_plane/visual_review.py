@@ -66,6 +66,121 @@ class VisualReviewAssessment(BaseModel):
         return cls.model_validate(payload)
 
 
+REQUIRED_CANDIDATE_CHECKS = frozenset(
+    {
+        "PERSPECTIVE",
+        "SCALE",
+        "OCCLUSION",
+        "ANATOMY",
+        "CONTINUITY",
+        "PHYSICAL_INTEGRATION",
+        "LIGHTING",
+    }
+)
+
+
+class VisualCandidateCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    category: Literal[
+        "PERSPECTIVE",
+        "SCALE",
+        "OCCLUSION",
+        "ANATOMY",
+        "CONTINUITY",
+        "PHYSICAL_INTEGRATION",
+        "LIGHTING",
+    ]
+    verdict: Literal["PASS", "FAIL", "NOT_APPLICABLE"]
+    observation: str = Field(min_length=10, max_length=2000)
+    location: str = Field(min_length=1, max_length=240)
+    revision_direction: str | None = Field(default=None, min_length=10, max_length=2000)
+
+    @model_validator(mode="after")
+    def require_revision_for_failure(self) -> VisualCandidateCheck:
+        if self.verdict == "FAIL" and self.revision_direction is None:
+            raise ValueError("failed candidate check requires a revision direction")
+        if self.verdict != "FAIL" and self.revision_direction is not None:
+            raise ValueError("revision direction is only valid for a failed check")
+        return self
+
+
+class VisualCandidateAssessment(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    repository_scope: str = Field(min_length=1, max_length=200)
+    base_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    asset_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+    asset_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    shot_id: str = Field(min_length=1, max_length=100)
+    reviewer_id: str = Field(min_length=1, max_length=100)
+    checks: tuple[VisualCandidateCheck, ...] = Field(min_length=7, max_length=7)
+
+    @model_validator(mode="after")
+    def require_complete_unique_checks(self) -> VisualCandidateAssessment:
+        if {check.category for check in self.checks} != REQUIRED_CANDIDATE_CHECKS:
+            raise ValueError("candidate assessment requires each visual check exactly once")
+        return self
+
+    @classmethod
+    def from_file(cls, path: Path) -> VisualCandidateAssessment:
+        candidate = path.resolve()
+        if not candidate.is_file() or candidate.stat().st_size > 65_536:
+            raise ValueError("visual candidate assessment is missing or too large")
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError("visual candidate assessment is invalid") from exc
+        return cls.model_validate(payload)
+
+
+def inspect_visual_candidate_review(
+    assessment: VisualCandidateAssessment,
+    *,
+    evidence_manifest: VisualEvidenceManifest,
+    repository_registry_file: Path,
+) -> dict[str, Any]:
+    """Bind reviewer-reported visual checks to an immutable candidate, without approval."""
+
+    if (
+        assessment.repository_scope != evidence_manifest.repository_scope
+        or assessment.base_revision != evidence_manifest.base_revision
+    ):
+        raise ValueError("visual candidate review does not match the evidence repository revision")
+    evidence = inspect_visual_evidence(
+        evidence_manifest, repository_registry_file=repository_registry_file
+    )
+    matches = [asset for asset in evidence["assets"] if asset["asset_id"] == assessment.asset_id]
+    if len(matches) != 1 or matches[0]["sha256"] != assessment.asset_sha256:
+        raise ValueError("visual candidate asset ID or digest does not match verified evidence")
+    asset = matches[0]
+    if asset["declared_status"] != "PENDING_CREATOR_REVIEW":
+        raise ValueError("visual candidate review requires pending creator review status")
+    failures = [check for check in assessment.checks if check.verdict == "FAIL"]
+    return {
+        "schema_version": "1",
+        "result": "CANDIDATE_REVIEW_CLAIMS_RECORDED",
+        "repository_scope": assessment.repository_scope,
+        "base_revision": assessment.base_revision,
+        "shot_id": assessment.shot_id,
+        "asset_id": assessment.asset_id,
+        "asset_sha256": asset["sha256"],
+        "asset_path": asset["local_path"],
+        "declared_status": asset["declared_status"],
+        "image_identity_verified": True,
+        "visual_findings_independently_verified": False,
+        "reviewer_identity_verified": False,
+        "reviewer_id_claim": assessment.reviewer_id,
+        "reviewer_reported_gate": "BLOCKED" if failures else "NO_REPORTED_DEFECTS",
+        "checks": [check.model_dump() for check in assessment.checks],
+        "revision_directions": [check.revision_direction for check in failures],
+        "creator_approval_recorded": False,
+        "runway_action_taken": False,
+        "provider_egress": False,
+    }
+
+
 def inspect_visual_review(
     assessment: VisualReviewAssessment,
     *,

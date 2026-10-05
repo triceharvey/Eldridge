@@ -24,7 +24,12 @@ from control_plane.persistence import make_engine, make_session_factory
 from control_plane.production_readiness import evaluate_production_readiness_file
 from control_plane.runtime import build_runtime
 from control_plane.visual_evidence import VisualEvidenceManifest, inspect_visual_evidence
-from control_plane.visual_review import VisualReviewAssessment, inspect_visual_review
+from control_plane.visual_review import (
+    VisualCandidateAssessment,
+    VisualReviewAssessment,
+    inspect_visual_candidate_review,
+    inspect_visual_review,
+)
 
 
 def run_demo(database_url: str) -> int:
@@ -122,6 +127,13 @@ def main() -> None:
     visual_review.add_argument("--manifest", type=Path, required=True)
     visual_review.add_argument("--assessment", type=Path, required=True)
     visual_review.add_argument("--repository-registry", type=Path, required=True)
+    candidate_review = audit_subparsers.add_parser(
+        "visual-candidate-review",
+        help="bind seven reviewer-reported quality checks to a pending image candidate",
+    )
+    candidate_review.add_argument("--manifest", type=Path, required=True)
+    candidate_review.add_argument("--assessment", type=Path, required=True)
+    candidate_review.add_argument("--repository-registry", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
@@ -133,6 +145,17 @@ def main() -> None:
         print(json.dumps(report, indent=2, sort_keys=True))
         raise SystemExit(0 if report["ready"] else 2)
     if args.command == "audit":
+        if args.audit_command == "visual-candidate-review":
+            try:
+                report = inspect_visual_candidate_review(
+                    VisualCandidateAssessment.from_file(args.assessment),
+                    evidence_manifest=VisualEvidenceManifest.from_file(args.manifest),
+                    repository_registry_file=args.repository_registry,
+                )
+            except (OSError, ValueError) as error:
+                raise SystemExit(str(error)) from error
+            print(json.dumps(report, indent=2, sort_keys=True))
+            raise SystemExit(0)
         if args.audit_command == "visual-review":
             try:
                 report = inspect_visual_review(
