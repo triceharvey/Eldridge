@@ -5,7 +5,13 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from control_plane.audit_export import build_audit_export, verify_audit_export
+from sqlalchemy.engine import make_url
+
+from control_plane.audit_export import (
+    build_audit_export,
+    build_provider_usage_report,
+    verify_audit_export,
+)
 from control_plane.config import Settings
 from control_plane.domain import ApprovalAction, ApprovalDecision, WorkflowState
 from control_plane.operator_workflow import (
@@ -97,6 +103,12 @@ def main() -> None:
     audit_export.add_argument("--output", type=Path, required=True)
     audit_verify = audit_subparsers.add_parser("verify")
     audit_verify.add_argument("--bundle", type=Path, required=True)
+    provider_usage = audit_subparsers.add_parser(
+        "provider-usage", help="summarize recorded provider attempts without model content"
+    )
+    provider_usage.add_argument("--database-url", required=True)
+    provider_usage.add_argument("--workflow-id")
+    provider_usage.add_argument("--provider-id")
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
@@ -108,6 +120,29 @@ def main() -> None:
         print(json.dumps(report, indent=2, sort_keys=True))
         raise SystemExit(0 if report["ready"] else 2)
     if args.command == "audit":
+        if args.audit_command == "provider-usage":
+            database = make_url(args.database_url)
+            if (
+                database.drivername.startswith("sqlite")
+                and database.database is not None
+                and database.database != ":memory:"
+                and not Path(database.database).is_file()
+            ):
+                raise SystemExit("provider usage database does not exist")
+            engine = make_engine(args.database_url)
+            try:
+                with make_session_factory(engine)() as session:
+                    report = build_provider_usage_report(
+                        session,
+                        workflow_id=args.workflow_id,
+                        provider_id=args.provider_id,
+                    )
+            except (OSError, ValueError) as error:
+                raise SystemExit(str(error)) from error
+            finally:
+                engine.dispose()
+            print(json.dumps(report, indent=2, sort_keys=True))
+            raise SystemExit(0)
         if args.audit_command == "verify":
             try:
                 payload = json.loads(args.bundle.read_text(encoding="utf-8"))

@@ -180,6 +180,120 @@ def build_audit_export(
     return {**body, "bundle_digest": _bundle_digest(body)}
 
 
+def build_provider_usage_report(
+    session: Session,
+    *,
+    workflow_id: str | None = None,
+    provider_id: str | None = None,
+) -> dict[str, Any]:
+    """Summarize recorded provider attempts without exposing prompts or model output."""
+
+    if workflow_id is not None:
+        if session.get(Workflow, workflow_id) is None:
+            raise ValueError("workflow was not found")
+        workflow_ids = [workflow_id]
+    else:
+        workflow_ids = list(session.scalars(select(Workflow.id).order_by(Workflow.id)))
+
+    for candidate_id in workflow_ids:
+        if not verify_audit_chain(session, candidate_id):
+            raise ValueError("workflow audit chain failed verification")
+
+    routed_attempts: dict[str, str] = {}
+    succeeded_attempts: set[str] = set()
+    if workflow_ids:
+        events = session.execute(
+            select(AuditEvent.event_type, AuditEvent.payload)
+            .where(AuditEvent.workflow_id.in_(workflow_ids))
+            .where(AuditEvent.event_type.in_(("task.routed", "task.succeeded")))
+        )
+        for event_type, payload in events:
+            attempt_id = payload.get("attempt_id")
+            if not isinstance(attempt_id, str):
+                continue
+            if event_type == "task.routed" and isinstance(payload.get("selected_provider_id"), str):
+                routed_attempts[attempt_id] = payload["selected_provider_id"]
+            elif event_type == "task.succeeded":
+                succeeded_attempts.add(attempt_id)
+
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    if workflow_ids:
+        rows = session.execute(
+            select(
+                Task.workflow_id,
+                TaskAttempt.id,
+                TaskAttempt.provider,
+                TaskAttempt.model,
+                TaskAttempt.status,
+                TaskAttempt.started_at,
+                TaskAttempt.completed_at,
+            )
+            .join(Task, Task.id == TaskAttempt.task_id)
+            .where(Task.workflow_id.in_(workflow_ids))
+            .order_by(Task.workflow_id, TaskAttempt.started_at, TaskAttempt.id)
+        )
+        for row in rows:
+            if provider_id is not None and row.provider != provider_id:
+                continue
+            key = (row.provider, row.model)
+            group = groups.setdefault(
+                key,
+                {
+                    "provider": row.provider,
+                    "model": row.model,
+                    "attempts": 0,
+                    "audit_correlated_successes": 0,
+                    "status_counts": {},
+                    "last_started_at": None,
+                    "last_completed_at": None,
+                    "workflow_ids": set(),
+                },
+            )
+            group["attempts"] += 1
+            if (
+                row.status == "SUCCEEDED"
+                and row.id in succeeded_attempts
+                and routed_attempts.get(row.id) == row.provider
+            ):
+                group["audit_correlated_successes"] += 1
+            counts = group["status_counts"]
+            counts[row.status] = counts.get(row.status, 0) + 1
+            group["workflow_ids"].add(row.workflow_id)
+            started = _utc_isoformat(row.started_at)
+            if group["last_started_at"] is None or started > group["last_started_at"]:
+                group["last_started_at"] = started
+            if row.completed_at is not None:
+                completed = _utc_isoformat(row.completed_at)
+                if group["last_completed_at"] is None or completed > group["last_completed_at"]:
+                    group["last_completed_at"] = completed
+
+    providers = []
+    for key in sorted(groups):
+        group = groups[key]
+        providers.append(
+            {
+                **group,
+                "status_counts": dict(sorted(group["status_counts"].items())),
+                "workflow_ids": sorted(group["workflow_ids"]),
+            }
+        )
+    return {
+        "source": "local_control_plane_database",
+        "workflow_id": workflow_id,
+        "provider_filter": provider_id,
+        "scanned_workflows": len(workflow_ids),
+        "matching_attempts": sum(group["attempts"] for group in providers),
+        "verified_workflows": len(workflow_ids),
+        "providers": providers,
+    }
+
+
+def _utc_isoformat(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat()
+
+
 def verify_audit_export(bundle: object) -> bool:
     """Verify the bundle digest and embedded per-workflow audit chain."""
 
