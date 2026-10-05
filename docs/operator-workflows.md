@@ -76,6 +76,25 @@ consume another task lease, but provider workflow quotas still apply.
 Claude Code subscription calls use `claude -p` with no session persistence, so they do not appear as
 conversations in the Claude app. Their normalized results are recorded by Eldridge.
 
+## Inspect recorded provider use
+
+Use the same local database URL passed to `workflow run`:
+
+```sh
+.venv/bin/control-plane audit provider-usage \
+  --database-url sqlite:///operator-workflow.db \
+  --provider-id claude-code-subscription
+```
+
+Add `--workflow-id` to narrow the report to one workflow. The command reads recorded attempt
+metadata, verifies the selected workflows' audit-event chains, and separately counts successful
+attempts with matching routed and succeeded audit events. It does not contact Claude,
+replay prompts, expose model output, or consume plan allowance. `SUCCEEDED` counts are completed
+Eldridge attempts, not provider-side billing receipts. An empty result means no matching attempt
+in **that database**, not that Claude was never used elsewhere. Retain the audit-chain head or an
+exported evidence-bundle digest in an independently protected location before treating the local
+database as tamper-resistant evidence.
+
 ## Human disposition
 
 After the command stops, inspect the exact branch and revision, then run the target repository's full
