@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "repository_scope": "example/project",
+  "base_revision": "0123456789abcdef0123456789abcdef01234567",
+  "assets": [
+    {
+      "asset_id": "candidate-01",
+      "label": "First visual candidate",
+      "path": "review/candidate.png",
+      "sha256": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "declared_status": "PENDING_CREATOR_REVIEW"
+    }
+  ]
+}
