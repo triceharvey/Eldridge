@@ -208,6 +208,8 @@ def build_provider_usage_report(
             .where(AuditEvent.event_type.in_(("task.routed", "task.succeeded")))
         )
         for event_type, payload in events:
+            if not isinstance(payload, Mapping):
+                continue
             attempt_id = payload.get("attempt_id")
             if not isinstance(attempt_id, str):
                 continue
