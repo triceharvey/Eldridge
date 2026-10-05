@@ -23,6 +23,7 @@ from control_plane.operator_workflow import (
 from control_plane.persistence import make_engine, make_session_factory
 from control_plane.production_readiness import evaluate_production_readiness_file
 from control_plane.runtime import build_runtime
+from control_plane.visual_evidence import VisualEvidenceManifest, inspect_visual_evidence
 
 
 def run_demo(database_url: str) -> int:
@@ -109,6 +110,11 @@ def main() -> None:
     provider_usage.add_argument("--database-url", required=True)
     provider_usage.add_argument("--workflow-id")
     provider_usage.add_argument("--provider-id")
+    visual_evidence = audit_subparsers.add_parser(
+        "visual-evidence", help="verify local images against a pinned repository revision"
+    )
+    visual_evidence.add_argument("--manifest", type=Path, required=True)
+    visual_evidence.add_argument("--repository-registry", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
@@ -120,6 +126,16 @@ def main() -> None:
         print(json.dumps(report, indent=2, sort_keys=True))
         raise SystemExit(0 if report["ready"] else 2)
     if args.command == "audit":
+        if args.audit_command == "visual-evidence":
+            try:
+                visual_manifest = VisualEvidenceManifest.from_file(args.manifest)
+                report = inspect_visual_evidence(
+                    visual_manifest, repository_registry_file=args.repository_registry
+                )
+            except (OSError, ValueError) as error:
+                raise SystemExit(str(error)) from error
+            print(json.dumps(report, indent=2, sort_keys=True))
+            raise SystemExit(0)
         if args.audit_command == "provider-usage":
             database = make_url(args.database_url)
             if (
