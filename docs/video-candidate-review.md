@@ -17,7 +17,7 @@ generate video, upload media, spend credits, approve motion, or authorize releas
 The source manifest and registry must pin the same Git revision and approved-still
 digest. The candidate manifest names an MP4-family file inside that registered
 repository, an expected SHA-256, a provider artifact ID **claim**, duration and
-credit **claims**, plus 3–24 sampled PNG/JPEG frames with timestamps and hashes.
+credit **claims**, plus 3–24 sampled PNG frames with timestamps and hashes.
 Samples must include the opening, middle, and ending. The reviewer assessment must
 name a different model family than the producer, match the candidate and every
 sample digest, and provide concrete findings. A rejection requires a blocking

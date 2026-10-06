@@ -307,10 +307,8 @@ def inspect_video_candidate(
         path = _verified_local_file(root, frame.path, frame.sha256, MAX_FRAME_BYTES)
         with path.open("rb") as stream:
             signature = stream.read(8)
-        if not (
-            signature.startswith(b"\x89PNG\r\n\x1a\n") or signature.startswith(b"\xff\xd8\xff")
-        ):
-            raise ValueError("video frame is not an allowed image")
+        if signature != b"\x89PNG\r\n\x1a\n":
+            raise ValueError("video frame must be a PNG for reproducible extraction")
         frames.append(
             {"timestamp_ms": frame.timestamp_ms, "path": str(path), "sha256": frame.sha256}
         )

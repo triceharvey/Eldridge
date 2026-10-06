@@ -186,6 +186,22 @@ def test_video_candidate_rejects_tampered_video_and_frame(tmp_path: Path) -> Non
         _inspect(registry, source, manifest, assessment)
 
 
+def test_video_candidate_rejects_jpeg_sample_that_png_extractor_cannot_reproduce(
+    tmp_path: Path,
+) -> None:
+    root, registry, source, manifest, assessment, _video = _inputs(tmp_path)
+    jpeg_bytes = b"\xff\xd8\xff\xe0not-a-png"
+    (root / "media" / "frame-500.png").write_bytes(jpeg_bytes)
+    candidate = json.loads(manifest.read_text(encoding="utf-8"))
+    candidate["frames"][1]["sha256"] = _digest(jpeg_bytes)
+    manifest.write_text(json.dumps(candidate), encoding="utf-8")
+    review = json.loads(assessment.read_text(encoding="utf-8"))
+    review["frames_reviewed_sha256"][1] = _digest(jpeg_bytes)
+    assessment.write_text(json.dumps(review), encoding="utf-8")
+    with pytest.raises(ValueError, match="frame must be a PNG"):
+        _inspect(registry, source, manifest, assessment)
+
+
 def test_video_candidate_rejects_same_model_and_frame_claim_mismatch(tmp_path: Path) -> None:
     _root, registry, source, manifest, assessment, _video = _inputs(tmp_path)
     payload = json.loads(assessment.read_text(encoding="utf-8"))
