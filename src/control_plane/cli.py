@@ -27,6 +27,7 @@ from control_plane.video_trial import (
     RunwayJobEvidence,
     VideoCandidateManifest,
     VideoReviewerAssessment,
+    create_runway_job_evidence,
     inspect_video_candidate,
 )
 from control_plane.visual_evidence import VisualEvidenceManifest, inspect_visual_evidence
@@ -149,6 +150,20 @@ def main() -> None:
     video_candidate.add_argument("--repository-registry", type=Path, required=True)
     video_candidate.add_argument("--verify-frames", action="store_true")
     video_candidate.add_argument("--runway-job-evidence", type=Path)
+    capture = subparsers.add_parser("capture", help="package already-saved local evidence")
+    capture_subparsers = capture.add_subparsers(dest="capture_command", required=True)
+    runway_receipt = capture_subparsers.add_parser(
+        "runway-receipt", help="hash Runway browser captures for later candidate audit"
+    )
+    runway_receipt.add_argument("--manifest", type=Path, required=True)
+    runway_receipt.add_argument("--repository-registry", type=Path, required=True)
+    runway_receipt.add_argument("--model-name", required=True)
+    runway_receipt.add_argument("--job-details", required=True)
+    runway_receipt.add_argument("--generation-settings", required=True)
+    runway_receipt.add_argument("--credit-ledger", required=True)
+    runway_receipt.add_argument("--credit-balance-before")
+    runway_receipt.add_argument("--download-record")
+    runway_receipt.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
@@ -159,6 +174,28 @@ def main() -> None:
             raise SystemExit(str(error)) from error
         print(json.dumps(report, indent=2, sort_keys=True))
         raise SystemExit(0 if report["ready"] else 2)
+    if args.command == "capture" and args.capture_command == "runway-receipt":
+        paths = {
+            "JOB_DETAILS": args.job_details,
+            "GENERATION_SETTINGS": args.generation_settings,
+            "CREDIT_LEDGER": args.credit_ledger,
+        }
+        if args.download_record is not None:
+            paths["DOWNLOAD_RECORD"] = args.download_record
+        if args.credit_balance_before is not None:
+            paths["CREDIT_BALANCE_BEFORE"] = args.credit_balance_before
+        try:
+            receipt = create_runway_job_evidence(
+                VideoCandidateManifest.from_file(args.manifest),
+                repository_registry_file=args.repository_registry,
+                model_name_claim=args.model_name,
+                capture_paths=paths,
+                output=args.output,
+            )
+        except (OSError, ValueError) as error:
+            raise SystemExit(str(error)) from error
+        print(json.dumps(receipt.model_dump(), indent=2, sort_keys=True))
+        raise SystemExit(0)
     if args.command == "audit":
         if args.audit_command == "video-candidate":
             try:

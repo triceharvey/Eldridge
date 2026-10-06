@@ -35,7 +35,37 @@ depend on the operating-system decoder version, so a cross-platform mismatch is
 not automatically proof of tampering. The check samples frames, not full playback.
 
 An optional browser-observed Runway receipt binds contemporaneous captures to the
-same video hash, artifact ID, duration claim, and credit claim. The receipt format is:
+same video hash, artifact ID, duration claim, and credit claim. Prepare it during
+the **next separately authorized** generation; this workflow does not itself
+authorize a generation or credit spend:
+
+1. Before generating, confirm the exact source-plate digest, permitted Runway
+   model, maximum existing-credit spend, and creator's generation approval. Save
+   the pre-generation credit balance as a local screenshot when available.
+2. After the job completes, save local screenshots of the job details (including
+   visible job ID), final generation settings, and credit ledger/debit. Download
+   the original video and preserve its bytes. Do not include passwords, session
+   tokens, cookies, or HAR files in the capture package.
+3. Create the video candidate manifest with the downloaded video hash and
+   observed job/duration/credit **claims**. Put screenshots inside its registered
+   repository. Then run the receipt builder below, using repository-relative
+   screenshot paths. It refuses missing/duplicate evidence, non-images, and
+   overwriting an existing receipt.
+
+```sh
+.venv/bin/control-plane capture runway-receipt \
+  --manifest video-candidate.json \
+  --repository-registry repository-registry.json \
+  --model-name 'Gen-4 Turbo' \
+  --job-details audits/runway-job.png \
+  --generation-settings audits/runway-settings.png \
+  --credit-ledger audits/runway-credit-debit.png \
+  --credit-balance-before audits/runway-credit-before.png \
+  --output audits/runway-job-evidence.json
+```
+
+Finally, run `audit video-candidate` with `--runway-job-evidence` and
+`--verify-frames` as shown above. A receipt has this format:
 
 ```json
 {
@@ -49,20 +79,31 @@ same video hash, artifact ID, duration claim, and credit claim. The receipt form
   "captures": [
     {
       "kind": "JOB_DETAILS",
-      "path": "audits/job-details.png",
+      "path": "audits/runway-job.png",
+      "sha256": "sha256:<64 lowercase hex digits>"
+    },
+    {
+      "kind": "GENERATION_SETTINGS",
+      "path": "audits/runway-settings.png",
+      "sha256": "sha256:<64 lowercase hex digits>"
+    },
+    {
+      "kind": "CREDIT_LEDGER",
+      "path": "audits/runway-credit-debit.png",
       "sha256": "sha256:<64 lowercase hex digits>"
     }
   ]
 }
 ```
 
-Capture paths must resolve inside the registered repository. Supported kinds are
-`JOB_DETAILS`, `GENERATION_SETTINGS`, `CREDIT_LEDGER`, and `DOWNLOAD_RECORD`.
-Capture the relevant Runway view at generation/download time, record the exact
-local file hashes, and preserve the files without alteration. The receipt proves
+Capture paths must resolve inside the registered repository. `JOB_DETAILS`,
+`GENERATION_SETTINGS`, and `CREDIT_LEDGER` are all required; `CREDIT_BALANCE_BEFORE`
+and `DOWNLOAD_RECORD` images are optional. Preserve the capture files without
+alteration. The receipt proves
 only that those local capture bytes match the manifest; it cannot authenticate
 Runway, independently verify the job ID or charged credits, or prove the capture
-was not edited before hashing. A provider-authenticated readback would need a
+was not edited before hashing. The auditor does not OCR the screenshots. A
+provider-authenticated readback would need a
 separate integration and an explicit access/cost decision.
 
 Nor does this command verify reviewer identity, model invocation, observation

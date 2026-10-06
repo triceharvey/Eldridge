@@ -15,6 +15,7 @@ from control_plane.video_trial import (
     RunwayJobEvidence,
     VideoCandidateManifest,
     VideoReviewerAssessment,
+    create_runway_job_evidence,
     inspect_video_candidate,
 )
 from control_plane.visual_evidence import VisualEvidenceManifest
@@ -291,8 +292,10 @@ def test_frame_derivation_opt_in_and_fail_closed(
 
 def test_runway_receipt_binds_capture_bytes_without_authenticating_provider(tmp_path: Path) -> None:
     root, registry, source, manifest, assessment, _video = _inputs(tmp_path)
-    capture = root / "media" / "runway-job.txt"
-    capture.write_bytes(b"Browser-visible Runway job details")
+    capture = root / "media" / "runway-job.png"
+    capture.write_bytes(PNG)
+    (root / "media" / "runway-settings.png").write_bytes(PNG)
+    (root / "media" / "runway-credits.png").write_bytes(PNG)
     payload = {
         "provider_artifact_id_claim": "provider-job-1",
         "video_sha256": _digest(MP4),
@@ -302,9 +305,15 @@ def test_runway_receipt_binds_capture_bytes_without_authenticating_provider(tmp_
         "captures": [
             {
                 "kind": "JOB_DETAILS",
-                "path": "media/runway-job.txt",
+                "path": "media/runway-job.png",
                 "sha256": _digest(capture.read_bytes()),
-            }
+            },
+            {
+                "kind": "GENERATION_SETTINGS",
+                "path": "media/runway-settings.png",
+                "sha256": _digest(PNG),
+            },
+            {"kind": "CREDIT_LEDGER", "path": "media/runway-credits.png", "sha256": _digest(PNG)},
         ],
     }
     receipt = RunwayJobEvidence.model_validate(payload)
@@ -334,3 +343,113 @@ def test_runway_receipt_binds_capture_bytes_without_authenticating_provider(tmp_
             repository_registry_file=registry,
             runway_job_evidence=wrong_claim,
         )
+
+
+def test_runway_receipt_builder_requires_complete_captures_and_no_overwrite(tmp_path: Path) -> None:
+    root, registry, _source, manifest_path, _assessment, _video = _inputs(tmp_path)
+    manifest = VideoCandidateManifest.from_file(manifest_path)
+    paths = {
+        "JOB_DETAILS": "media/job.png",
+        "GENERATION_SETTINGS": "media/settings.png",
+        "CREDIT_LEDGER": "media/credits.png",
+    }
+    for path in paths.values():
+        (root / path).write_bytes(PNG)
+    output = root / "media" / "receipt.json"
+    with pytest.raises(ValueError, match="requires job, settings, and credit"):
+        create_runway_job_evidence(
+            manifest,
+            repository_registry_file=registry,
+            model_name_claim="Gen-4 Turbo",
+            capture_paths={"JOB_DETAILS": paths["JOB_DETAILS"]},
+            output=output,
+        )
+    receipt = create_runway_job_evidence(
+        manifest,
+        repository_registry_file=registry,
+        model_name_claim="Gen-4 Turbo",
+        capture_paths=paths,
+        output=output,
+    )
+    assert RunwayJobEvidence.from_file(output) == receipt
+    assert [item.kind for item in receipt.captures] == list(paths)
+    with pytest.raises(ValueError, match="must be a new file"):
+        create_runway_job_evidence(
+            manifest,
+            repository_registry_file=registry,
+            model_name_claim="Gen-4 Turbo",
+            capture_paths=paths,
+            output=output,
+        )
+    assert json.loads(output.read_text(encoding="utf-8"))["credits_charged_claim"] == 25
+
+
+def test_runway_receipt_rejects_missing_kind_and_non_image(tmp_path: Path) -> None:
+    root, registry, _source, manifest_path, _assessment, _video = _inputs(tmp_path)
+    manifest = VideoCandidateManifest.from_file(manifest_path)
+    with pytest.raises(ValueError, match="requires distinct job, settings, and credit"):
+        RunwayJobEvidence.model_validate(
+            {
+                "provider_artifact_id_claim": "provider-job-1",
+                "video_sha256": _digest(MP4),
+                "model_name_claim": "Gen-4 Turbo",
+                "duration_ms_claim": 1000,
+                "credits_charged_claim": 25,
+                "captures": [
+                    {"kind": "JOB_DETAILS", "path": f"media/{i}.png", "sha256": _digest(PNG)}
+                    for i in range(3)
+                ],
+            }
+        )
+    (root / "media" / "job.png").write_text("not an image", encoding="utf-8")
+    for name in ("settings.png", "credits.png"):
+        (root / "media" / name).write_bytes(PNG)
+    with pytest.raises(ValueError, match="PNG or JPEG"):
+        create_runway_job_evidence(
+            manifest,
+            repository_registry_file=registry,
+            model_name_claim="Gen-4 Turbo",
+            capture_paths={
+                "JOB_DETAILS": "media/job.png",
+                "GENERATION_SETTINGS": "media/settings.png",
+                "CREDIT_LEDGER": "media/credits.png",
+            },
+            output=root / "media" / "receipt.json",
+        )
+
+
+def test_cli_creates_runway_receipt_from_local_capture_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, registry, _source, manifest, _assessment, _video = _inputs(tmp_path)
+    for name in ("job.png", "settings.png", "credits.png"):
+        (root / "media" / name).write_bytes(PNG)
+    output = root / "media" / "receipt.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "control-plane",
+            "capture",
+            "runway-receipt",
+            "--manifest",
+            str(manifest),
+            "--repository-registry",
+            str(registry),
+            "--model-name",
+            "Gen-4 Turbo",
+            "--job-details",
+            "media/job.png",
+            "--generation-settings",
+            "media/settings.png",
+            "--credit-ledger",
+            "media/credits.png",
+            "--output",
+            str(output),
+        ],
+    )
+    with pytest.raises(SystemExit) as result:
+        main()
+    assert result.value.code == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == json.loads(capsys.readouterr().out)
+    assert len(RunwayJobEvidence.from_file(output).captures) == 3

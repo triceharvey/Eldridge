@@ -7,6 +7,8 @@ authenticates a provider job, reviewer identity, visual truth, or creator approv
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Literal
@@ -75,7 +77,13 @@ class VideoCandidateManifest(BaseModel):
 class RunwayCapture(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: Literal["JOB_DETAILS", "GENERATION_SETTINGS", "CREDIT_LEDGER", "DOWNLOAD_RECORD"]
+    kind: Literal[
+        "JOB_DETAILS",
+        "GENERATION_SETTINGS",
+        "CREDIT_LEDGER",
+        "CREDIT_BALANCE_BEFORE",
+        "DOWNLOAD_RECORD",
+    ]
     path: str = Field(min_length=1, max_length=500)
     sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
@@ -92,13 +100,20 @@ class RunwayJobEvidence(BaseModel):
     model_name_claim: str = Field(min_length=1, max_length=100)
     duration_ms_claim: int = Field(ge=1000, le=60_000)
     credits_charged_claim: int = Field(ge=0, le=100_000)
-    captures: tuple[RunwayCapture, ...] = Field(min_length=1, max_length=12)
+    captures: tuple[RunwayCapture, ...] = Field(min_length=3, max_length=5)
 
     @model_validator(mode="after")
     def validate_capture_paths(self) -> RunwayJobEvidence:
         paths = [capture.path for capture in self.captures]
         if len(paths) != len(set(paths)):
             raise ValueError("Runway capture paths must be distinct")
+        kinds = [capture.kind for capture in self.captures]
+        if len(kinds) != len(set(kinds)) or not {
+            "JOB_DETAILS",
+            "GENERATION_SETTINGS",
+            "CREDIT_LEDGER",
+        }.issubset(kinds):
+            raise ValueError("Runway receipt requires distinct job, settings, and credit captures")
         for path in paths:
             validate_relative_path(path)
         return self
@@ -184,6 +199,77 @@ def _verified_local_file(root: Path, relative_path: str, expected_digest: str, l
     return path
 
 
+def _capture_from_file(root: Path, kind: str, relative_path: str) -> RunwayCapture:
+    relative = validate_relative_path(relative_path)
+    candidate = root.joinpath(*relative.parts)
+    path = candidate.resolve(strict=True)
+    if not path.is_relative_to(root) or candidate.is_symlink() or not path.is_file():
+        raise ValueError("Runway capture path is not a regular registered file")
+    if not 0 < path.stat().st_size <= MAX_FRAME_BYTES:
+        raise ValueError("Runway capture exceeds the size boundary")
+    with path.open("rb") as stream:
+        signature = stream.read(8)
+    if not (signature.startswith(b"\x89PNG\r\n\x1a\n") or signature.startswith(b"\xff\xd8\xff")):
+        raise ValueError("Runway capture must be a PNG or JPEG image")
+    digest = sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return RunwayCapture(kind=kind, path=relative_path, sha256=f"sha256:{digest.hexdigest()}")
+
+
+def create_runway_job_evidence(
+    manifest: VideoCandidateManifest,
+    *,
+    repository_registry_file: Path,
+    model_name_claim: str,
+    capture_paths: dict[str, str],
+    output: Path,
+) -> RunwayJobEvidence:
+    """Hash already-saved browser captures and atomically create a receipt; no egress."""
+
+    registry = RepositoryRegistry.from_file(repository_registry_file)
+    root = registry.resolve(manifest.repository_scope).path
+    _verified_local_file(root, manifest.video_path, manifest.video_sha256, MAX_VIDEO_BYTES)
+    required = {"JOB_DETAILS", "GENERATION_SETTINGS", "CREDIT_LEDGER"}
+    optional = {"CREDIT_BALANCE_BEFORE", "DOWNLOAD_RECORD"}
+    if not required.issubset(capture_paths) or not set(capture_paths).issubset(required | optional):
+        raise ValueError("capture package requires job, settings, and credit records")
+    reserved = {manifest.video_path, *(frame.path for frame in manifest.frames)}
+    if set(capture_paths.values()) & reserved:
+        raise ValueError("Runway captures must be distinct from video and sampled frames")
+    captures = tuple(
+        _capture_from_file(root, kind, relative_path)
+        for kind, relative_path in capture_paths.items()
+    )
+    receipt = RunwayJobEvidence(
+        provider_artifact_id_claim=manifest.provider_artifact_id_claim,
+        video_sha256=manifest.video_sha256,
+        model_name_claim=model_name_claim,
+        duration_ms_claim=manifest.duration_ms_claim,
+        credits_charged_claim=manifest.credits_charged_claim,
+        captures=captures,
+    )
+    parent = output.parent.resolve(strict=True)
+    if not parent.is_relative_to(root) or output.exists() or output.is_symlink():
+        raise ValueError("receipt output must be a new file in the registered repository")
+    payload = (json.dumps(receipt.model_dump(), indent=2) + "\n").encode("utf-8")
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=".runway-receipt-", dir=parent, delete=False
+        ) as temp:
+            temporary_path = Path(temp.name)
+            temp.write(payload)
+            temp.flush()
+            os.fsync(temp.fileno())
+        os.link(temporary_path, output)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    return receipt
+
+
 def inspect_video_candidate(
     manifest: VideoCandidateManifest,
     assessment: VideoReviewerAssessment,
@@ -253,6 +339,12 @@ def inspect_video_candidate(
             }:
                 raise ValueError("Runway capture must be distinct from video and sampled frames")
             path = _verified_local_file(root, capture.path, capture.sha256, MAX_FRAME_BYTES)
+            with path.open("rb") as stream:
+                signature = stream.read(8)
+            if not (
+                signature.startswith(b"\x89PNG\r\n\x1a\n") or signature.startswith(b"\xff\xd8\xff")
+            ):
+                raise ValueError("Runway capture must be a PNG or JPEG image")
             captures.append({"kind": capture.kind, "path": str(path), "sha256": capture.sha256})
         capture_report = {
             "capture_method": runway_job_evidence.capture_method,
