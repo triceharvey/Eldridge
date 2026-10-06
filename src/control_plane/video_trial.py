@@ -253,9 +253,7 @@ def inspect_video_candidate(
             }:
                 raise ValueError("Runway capture must be distinct from video and sampled frames")
             path = _verified_local_file(root, capture.path, capture.sha256, MAX_FRAME_BYTES)
-            captures.append(
-                {"kind": capture.kind, "path": str(path), "sha256": capture.sha256}
-            )
+            captures.append({"kind": capture.kind, "path": str(path), "sha256": capture.sha256})
         capture_report = {
             "capture_method": runway_job_evidence.capture_method,
             "model_name_claim": runway_job_evidence.model_name_claim,
