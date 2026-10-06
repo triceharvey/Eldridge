@@ -1,7 +1,7 @@
 """Read-only binding of a local video candidate and limited reviewer evidence.
 
-This checks byte identity, not media decoding, frame derivation, provider identity,
-reviewer identity, visual truth, or creator approval.
+Frame derivation and local capture integrity are optional, explicit checks. Neither
+authenticates a provider job, reviewer identity, visual truth, or creator approval.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from control_plane.tools import validate_relative_path
+from control_plane.video_frames import verify_frame_derivation
 from control_plane.visual_evidence import VisualEvidenceManifest, inspect_visual_evidence
 from control_plane.workspaces import RepositoryRegistry
 
@@ -69,6 +70,42 @@ class VideoCandidateManifest(BaseModel):
     @classmethod
     def from_file(cls, path: Path) -> VideoCandidateManifest:
         return cls.model_validate(_read_json(path, "video candidate manifest"))
+
+
+class RunwayCapture(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["JOB_DETAILS", "GENERATION_SETTINGS", "CREDIT_LEDGER", "DOWNLOAD_RECORD"]
+    path: str = Field(min_length=1, max_length=500)
+    sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class RunwayJobEvidence(BaseModel):
+    """Browser-observed receipt; never a provider-signed attestation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    capture_method: Literal["BROWSER_OBSERVED"] = "BROWSER_OBSERVED"
+    provider_artifact_id_claim: str = Field(min_length=1, max_length=200)
+    video_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    model_name_claim: str = Field(min_length=1, max_length=100)
+    duration_ms_claim: int = Field(ge=1000, le=60_000)
+    credits_charged_claim: int = Field(ge=0, le=100_000)
+    captures: tuple[RunwayCapture, ...] = Field(min_length=1, max_length=12)
+
+    @model_validator(mode="after")
+    def validate_capture_paths(self) -> RunwayJobEvidence:
+        paths = [capture.path for capture in self.captures]
+        if len(paths) != len(set(paths)):
+            raise ValueError("Runway capture paths must be distinct")
+        for path in paths:
+            validate_relative_path(path)
+        return self
+
+    @classmethod
+    def from_file(cls, path: Path) -> RunwayJobEvidence:
+        return cls.model_validate(_read_json(path, "Runway job evidence"))
 
 
 class VideoReviewFinding(BaseModel):
@@ -153,6 +190,8 @@ def inspect_video_candidate(
     *,
     source_evidence_manifest: VisualEvidenceManifest,
     repository_registry_file: Path,
+    verify_frames: bool = False,
+    runway_job_evidence: RunwayJobEvidence | None = None,
 ) -> dict[str, Any]:
     """Check source and candidate bytes, then bind limited reviewer claims."""
 
@@ -197,6 +236,33 @@ def inspect_video_candidate(
         raise ValueError("video reviewer assessment does not match candidate identity")
     if list(assessment.frames_reviewed_sha256) != [frame.sha256 for frame in manifest.frames]:
         raise ValueError("video reviewer frame claims do not match verified samples")
+    derivation = verify_frame_derivation(video, manifest.frames) if verify_frames else None
+    capture_report = None
+    if runway_job_evidence is not None:
+        if (
+            runway_job_evidence.provider_artifact_id_claim != manifest.provider_artifact_id_claim
+            or runway_job_evidence.video_sha256 != manifest.video_sha256
+            or runway_job_evidence.duration_ms_claim != manifest.duration_ms_claim
+            or runway_job_evidence.credits_charged_claim != manifest.credits_charged_claim
+        ):
+            raise ValueError("Runway job receipt claims do not match video candidate")
+        captures = []
+        for capture in runway_job_evidence.captures:
+            if capture.path == manifest.video_path or capture.path in {
+                frame.path for frame in manifest.frames
+            }:
+                raise ValueError("Runway capture must be distinct from video and sampled frames")
+            path = _verified_local_file(root, capture.path, capture.sha256, MAX_FRAME_BYTES)
+            captures.append(
+                {"kind": capture.kind, "path": str(path), "sha256": capture.sha256}
+            )
+        capture_report = {
+            "capture_method": runway_job_evidence.capture_method,
+            "model_name_claim": runway_job_evidence.model_name_claim,
+            "captures": captures,
+            "local_capture_bytes_verified": True,
+            "provider_origin_authenticated": False,
+        }
     return {
         "schema_version": "1",
         "result": "VIDEO_REVIEW_CLAIMS_BOUND_TO_LOCAL_BYTES",
@@ -217,7 +283,9 @@ def inspect_video_candidate(
         "duration_and_cost_verified": False,
         "frames": frames,
         "frame_bytes_verified": True,
-        "frame_derivation_from_video_verified": False,
+        "frame_derivation_from_video_verified": derivation is not None,
+        "frame_extraction": derivation,
+        "runway_job_evidence": capture_report,
         "reviewer_model_family_claim": assessment.reviewer_model_family,
         "reviewer_identity_verified": False,
         "reviewer_observations_independently_verified": False,

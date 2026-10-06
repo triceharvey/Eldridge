@@ -24,6 +24,7 @@ from control_plane.persistence import make_engine, make_session_factory
 from control_plane.production_readiness import evaluate_production_readiness_file
 from control_plane.runtime import build_runtime
 from control_plane.video_trial import (
+    RunwayJobEvidence,
     VideoCandidateManifest,
     VideoReviewerAssessment,
     inspect_video_candidate,
@@ -146,6 +147,8 @@ def main() -> None:
     video_candidate.add_argument("--manifest", type=Path, required=True)
     video_candidate.add_argument("--assessment", type=Path, required=True)
     video_candidate.add_argument("--repository-registry", type=Path, required=True)
+    video_candidate.add_argument("--verify-frames", action="store_true")
+    video_candidate.add_argument("--runway-job-evidence", type=Path)
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
@@ -164,6 +167,12 @@ def main() -> None:
                     VideoReviewerAssessment.from_file(args.assessment),
                     source_evidence_manifest=VisualEvidenceManifest.from_file(args.source_manifest),
                     repository_registry_file=args.repository_registry,
+                    verify_frames=args.verify_frames,
+                    runway_job_evidence=(
+                        RunwayJobEvidence.from_file(args.runway_job_evidence)
+                        if args.runway_job_evidence is not None
+                        else None
+                    ),
                 )
             except (OSError, ValueError) as error:
                 raise SystemExit(str(error)) from error

@@ -12,6 +12,7 @@ import pytest
 
 from control_plane.cli import main
 from control_plane.video_trial import (
+    RunwayJobEvidence,
     VideoCandidateManifest,
     VideoReviewerAssessment,
     inspect_video_candidate,
@@ -250,3 +251,86 @@ def test_cli_video_candidate_is_read_only(
     assert result.value.code == 0
     assert json.loads(capsys.readouterr().out)["reviewer_recommendation"] == "REJECT"
     assert _git(root, "status", "--porcelain").count("??") == 4
+
+
+def test_frame_derivation_opt_in_and_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _root, registry, source, manifest, assessment, _video = _inputs(tmp_path)
+    called = []
+
+    def verified(video: Path, samples: tuple) -> dict:
+        called.append((video, samples))
+        return {"backend": "test-decoder", "timestamps": []}
+
+    monkeypatch.setattr("control_plane.video_trial.verify_frame_derivation", verified)
+    report = inspect_video_candidate(
+        VideoCandidateManifest.from_file(manifest),
+        VideoReviewerAssessment.from_file(assessment),
+        source_evidence_manifest=VisualEvidenceManifest.from_file(source),
+        repository_registry_file=registry,
+        verify_frames=True,
+    )
+    assert report["frame_derivation_from_video_verified"] is True
+    assert report["frame_extraction"]["backend"] == "test-decoder"
+    assert len(called) == 1
+
+    def failed(_video: Path, _samples: tuple) -> dict:
+        raise ValueError("extracted frame digest does not match archived sample")
+
+    monkeypatch.setattr("control_plane.video_trial.verify_frame_derivation", failed)
+    with pytest.raises(ValueError, match="digest does not match"):
+        inspect_video_candidate(
+            VideoCandidateManifest.from_file(manifest),
+            VideoReviewerAssessment.from_file(assessment),
+            source_evidence_manifest=VisualEvidenceManifest.from_file(source),
+            repository_registry_file=registry,
+            verify_frames=True,
+        )
+
+
+def test_runway_receipt_binds_capture_bytes_without_authenticating_provider(tmp_path: Path) -> None:
+    root, registry, source, manifest, assessment, _video = _inputs(tmp_path)
+    capture = root / "media" / "runway-job.txt"
+    capture.write_bytes(b"Browser-visible Runway job details")
+    payload = {
+        "provider_artifact_id_claim": "provider-job-1",
+        "video_sha256": _digest(MP4),
+        "model_name_claim": "Gen-4 Turbo",
+        "duration_ms_claim": 1000,
+        "credits_charged_claim": 25,
+        "captures": [
+            {
+                "kind": "JOB_DETAILS",
+                "path": "media/runway-job.txt",
+                "sha256": _digest(capture.read_bytes()),
+            }
+        ],
+    }
+    receipt = RunwayJobEvidence.model_validate(payload)
+
+    def inspect() -> dict:
+        return inspect_video_candidate(
+            VideoCandidateManifest.from_file(manifest),
+            VideoReviewerAssessment.from_file(assessment),
+            source_evidence_manifest=VisualEvidenceManifest.from_file(source),
+            repository_registry_file=registry,
+            runway_job_evidence=receipt,
+        )
+
+    report = inspect()
+    assert report["runway_job_evidence"]["local_capture_bytes_verified"] is True
+    assert report["runway_job_evidence"]["provider_origin_authenticated"] is False
+    assert report["provider_identity_verified"] is False
+    capture.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="digest does not match"):
+        inspect()
+    wrong_claim = RunwayJobEvidence.model_validate({**payload, "credits_charged_claim": 24})
+    with pytest.raises(ValueError, match="do not match video candidate"):
+        inspect_video_candidate(
+            VideoCandidateManifest.from_file(manifest),
+            VideoReviewerAssessment.from_file(assessment),
+            source_evidence_manifest=VisualEvidenceManifest.from_file(source),
+            repository_registry_file=registry,
+            runway_job_evidence=wrong_claim,
+        )
