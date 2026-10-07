@@ -12,6 +12,13 @@ import pytest
 
 from control_plane.cli import main
 from control_plane.visual_evidence import VisualEvidenceManifest, inspect_visual_evidence
+from control_plane.visual_review import (
+    REQUIRED_CANDIDATE_CHECKS,
+    VisualCandidateAssessment,
+    VisualReviewAssessment,
+    inspect_visual_candidate_review,
+    inspect_visual_review,
+)
 
 ONE_PIXEL_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0XcAAAAASUVORK5CYII="
@@ -185,4 +192,251 @@ def test_cli_visual_evidence_is_read_only(
     assert result.value.code == 0
     report = json.loads(capsys.readouterr().out)
     assert report["assets"][0]["local_path"] == str(image_path)
+    assert _git(image_path.parents[1], "status", "--porcelain") == ""
+
+
+def _rejected_review_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
+    image_path, registry, manifest_path, revision = _review_inputs(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["assets"][0]["declared_status"] = "REJECTED_SPATIAL_SCALE_OCCLUSION"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    assessment_path = tmp_path / "assessment.json"
+    assessment_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "repository_scope": "example/project",
+                "base_revision": revision,
+                "asset_id": "CANDIDATE-1",
+                "asset_sha256": f"sha256:{sha256(ONE_PIXEL_PNG).hexdigest()}",
+                "shot_id": "SHOT-05",
+                "reviewer_id": "creator-supplied-feedback",
+                "findings": [
+                    {
+                        "category": "OCCLUSION",
+                        "severity": "BLOCKER",
+                        "source": "CREATOR_FEEDBACK",
+                        "observation": (
+                            "The subject overlaps a pole that should be in the foreground."
+                        ),
+                        "location": "subject ear and left street pole",
+                        "retry_direction": "Keep the nearer pole in front of the distant subject.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return image_path, registry, manifest_path, assessment_path
+
+
+def test_visual_review_binds_retry_to_rejected_image_without_approval(tmp_path: Path) -> None:
+    image_path, registry, manifest_path, assessment_path = _rejected_review_inputs(tmp_path)
+    report = inspect_visual_review(
+        VisualReviewAssessment.from_file(assessment_path),
+        evidence_manifest=VisualEvidenceManifest.from_file(manifest_path),
+        repository_registry_file=registry,
+    )
+
+    assert report["result"] == "RETRY_PROPOSED_NOT_EXECUTED"
+    assert report["asset_path"] == str(image_path)
+    assert report["image_identity_verified"] is True
+    assert report["visual_findings_independently_verified"] is False
+    assert report["reviewer_identity_verified"] is False
+    assert report["creator_approval_recorded"] is False
+    assert report["runway_action_taken"] is False
+    assert report["provider_egress"] is False
+    assert _git(image_path.parents[1], "status", "--porcelain") == ""
+
+
+def test_visual_review_rejects_digest_and_revision_mismatch(tmp_path: Path) -> None:
+    _image_path, registry, manifest_path, assessment_path = _rejected_review_inputs(tmp_path)
+    payload = json.loads(assessment_path.read_text(encoding="utf-8"))
+    payload["asset_sha256"] = "sha256:" + "0" * 64
+    assessment_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="asset ID or digest"):
+        inspect_visual_review(
+            VisualReviewAssessment.from_file(assessment_path),
+            evidence_manifest=VisualEvidenceManifest.from_file(manifest_path),
+            repository_registry_file=registry,
+        )
+
+    payload["base_revision"] = "0" * 40
+    assessment_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="repository revision"):
+        inspect_visual_review(
+            VisualReviewAssessment.from_file(assessment_path),
+            evidence_manifest=VisualEvidenceManifest.from_file(manifest_path),
+            repository_registry_file=registry,
+        )
+
+
+def test_visual_review_requires_rejection_and_blocking_finding(tmp_path: Path) -> None:
+    _image_path, registry, manifest_path, assessment_path = _rejected_review_inputs(tmp_path)
+    assessment = json.loads(assessment_path.read_text(encoding="utf-8"))
+    assessment["findings"][0]["severity"] = "MINOR"
+    assessment_path.write_text(json.dumps(assessment), encoding="utf-8")
+    with pytest.raises(ValueError, match="blocking finding"):
+        VisualReviewAssessment.from_file(assessment_path)
+
+    assessment["findings"][0]["severity"] = "BLOCKER"
+    assessment_path.write_text(json.dumps(assessment), encoding="utf-8")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["assets"][0]["declared_status"] = "PENDING_CREATOR_REVIEW"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="rejected candidate"):
+        inspect_visual_review(
+            VisualReviewAssessment.from_file(assessment_path),
+            evidence_manifest=VisualEvidenceManifest.from_file(manifest_path),
+            repository_registry_file=registry,
+        )
+
+
+def test_cli_visual_review_does_not_write_or_invoke_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    image_path, registry, manifest_path, assessment_path = _rejected_review_inputs(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "control-plane",
+            "audit",
+            "visual-review",
+            "--manifest",
+            str(manifest_path),
+            "--assessment",
+            str(assessment_path),
+            "--repository-registry",
+            str(registry),
+        ],
+    )
+    with pytest.raises(SystemExit) as result:
+        main()
+    assert result.value.code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["asset_path"] == str(image_path)
+    assert report["runway_action_taken"] is False
+    assert _git(image_path.parents[1], "status", "--porcelain") == ""
+
+
+def _candidate_assessment(tmp_path: Path, revision: str) -> Path:
+    assessment_path = tmp_path / "candidate-assessment.json"
+    assessment_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "repository_scope": "example/project",
+                "base_revision": revision,
+                "asset_id": "CANDIDATE-1",
+                "asset_sha256": f"sha256:{sha256(ONE_PIXEL_PNG).hexdigest()}",
+                "shot_id": "SHOT-05",
+                "reviewer_id": "codex-visual-observation",
+                "checks": [
+                    {
+                        "category": category,
+                        "verdict": "PASS",
+                        "observation": "The reviewer reports no visible defect in this category.",
+                        "location": "full candidate frame",
+                    }
+                    for category in sorted(REQUIRED_CANDIDATE_CHECKS)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return assessment_path
+
+
+def test_visual_candidate_review_records_claims_without_approval(tmp_path: Path) -> None:
+    image_path, registry, manifest_path, revision = _review_inputs(tmp_path)
+    assessment_path = _candidate_assessment(tmp_path, revision)
+    report = inspect_visual_candidate_review(
+        VisualCandidateAssessment.from_file(assessment_path),
+        evidence_manifest=VisualEvidenceManifest.from_file(manifest_path),
+        repository_registry_file=registry,
+    )
+    assert report["asset_path"] == str(image_path)
+    assert report["reviewer_reported_gate"] == "NO_REPORTED_DEFECTS"
+    assert report["visual_findings_independently_verified"] is False
+    assert report["creator_approval_recorded"] is False
+    assert report["provider_egress"] is False
+    assert _git(image_path.parents[1], "status", "--porcelain") == ""
+
+
+def test_visual_candidate_review_fails_closed_for_missing_check_and_bad_digest(
+    tmp_path: Path,
+) -> None:
+    _image_path, registry, manifest_path, revision = _review_inputs(tmp_path)
+    assessment_path = _candidate_assessment(tmp_path, revision)
+    payload = json.loads(assessment_path.read_text(encoding="utf-8"))
+    payload["checks"][-1] = payload["checks"][0]
+    assessment_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="each visual check exactly once"):
+        VisualCandidateAssessment.from_file(assessment_path)
+
+    payload = json.loads(_candidate_assessment(tmp_path, revision).read_text(encoding="utf-8"))
+    payload["asset_sha256"] = "sha256:" + "0" * 64
+    assessment_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="asset ID or digest"):
+        inspect_visual_candidate_review(
+            VisualCandidateAssessment.from_file(assessment_path),
+            evidence_manifest=VisualEvidenceManifest.from_file(manifest_path),
+            repository_registry_file=registry,
+        )
+
+
+def test_visual_candidate_review_reports_failed_checks_and_rejects_approved_label(
+    tmp_path: Path,
+) -> None:
+    _image_path, registry, manifest_path, revision = _review_inputs(tmp_path)
+    assessment_path = _candidate_assessment(tmp_path, revision)
+    payload = json.loads(assessment_path.read_text(encoding="utf-8"))
+    payload["checks"][0]["verdict"] = "FAIL"
+    payload["checks"][0]["revision_direction"] = "Correct the foreground depth relationship."
+    assessment_path.write_text(json.dumps(payload), encoding="utf-8")
+    report = inspect_visual_candidate_review(
+        VisualCandidateAssessment.from_file(assessment_path),
+        evidence_manifest=VisualEvidenceManifest.from_file(manifest_path),
+        repository_registry_file=registry,
+    )
+    assert report["reviewer_reported_gate"] == "BLOCKED"
+    assert report["revision_directions"] == ["Correct the foreground depth relationship."]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["assets"][0]["declared_status"] = "APPROVED_PRODUCTION_PLATE"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="pending creator review"):
+        inspect_visual_candidate_review(
+            VisualCandidateAssessment.from_file(assessment_path),
+            evidence_manifest=VisualEvidenceManifest.from_file(manifest_path),
+            repository_registry_file=registry,
+        )
+
+
+def test_cli_visual_candidate_review_is_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    image_path, registry, manifest_path, revision = _review_inputs(tmp_path)
+    assessment_path = _candidate_assessment(tmp_path, revision)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "control-plane",
+            "audit",
+            "visual-candidate-review",
+            "--manifest",
+            str(manifest_path),
+            "--assessment",
+            str(assessment_path),
+            "--repository-registry",
+            str(registry),
+        ],
+    )
+    with pytest.raises(SystemExit) as result:
+        main()
+    assert result.value.code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["asset_path"] == str(image_path)
+    assert report["creator_approval_recorded"] is False
     assert _git(image_path.parents[1], "status", "--porcelain") == ""

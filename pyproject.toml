@@ -41,6 +41,9 @@ control-plane-local-canary = "control_plane.local_canary:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/control_plane"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/control_plane/extract_video_frames.swift" = "control_plane/extract_video_frames.swift"
+
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]

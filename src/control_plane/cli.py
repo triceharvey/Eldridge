@@ -23,7 +23,20 @@ from control_plane.operator_workflow import (
 from control_plane.persistence import make_engine, make_session_factory
 from control_plane.production_readiness import evaluate_production_readiness_file
 from control_plane.runtime import build_runtime
+from control_plane.video_trial import (
+    RunwayJobEvidence,
+    VideoCandidateManifest,
+    VideoReviewerAssessment,
+    create_runway_job_evidence,
+    inspect_video_candidate,
+)
 from control_plane.visual_evidence import VisualEvidenceManifest, inspect_visual_evidence
+from control_plane.visual_review import (
+    VisualCandidateAssessment,
+    VisualReviewAssessment,
+    inspect_visual_candidate_review,
+    inspect_visual_review,
+)
 
 
 def run_demo(database_url: str) -> int:
@@ -115,6 +128,42 @@ def main() -> None:
     )
     visual_evidence.add_argument("--manifest", type=Path, required=True)
     visual_evidence.add_argument("--repository-registry", type=Path, required=True)
+    visual_review = audit_subparsers.add_parser(
+        "visual-review", help="bind a proposed retry critique to verified local image evidence"
+    )
+    visual_review.add_argument("--manifest", type=Path, required=True)
+    visual_review.add_argument("--assessment", type=Path, required=True)
+    visual_review.add_argument("--repository-registry", type=Path, required=True)
+    candidate_review = audit_subparsers.add_parser(
+        "visual-candidate-review",
+        help="bind seven reviewer-reported quality checks to a pending image candidate",
+    )
+    candidate_review.add_argument("--manifest", type=Path, required=True)
+    candidate_review.add_argument("--assessment", type=Path, required=True)
+    candidate_review.add_argument("--repository-registry", type=Path, required=True)
+    video_candidate = audit_subparsers.add_parser(
+        "video-candidate", help="bind a local video and sampled review to an approved still"
+    )
+    video_candidate.add_argument("--source-manifest", type=Path, required=True)
+    video_candidate.add_argument("--manifest", type=Path, required=True)
+    video_candidate.add_argument("--assessment", type=Path, required=True)
+    video_candidate.add_argument("--repository-registry", type=Path, required=True)
+    video_candidate.add_argument("--verify-frames", action="store_true")
+    video_candidate.add_argument("--runway-job-evidence", type=Path)
+    capture = subparsers.add_parser("capture", help="package already-saved local evidence")
+    capture_subparsers = capture.add_subparsers(dest="capture_command", required=True)
+    runway_receipt = capture_subparsers.add_parser(
+        "runway-receipt", help="hash Runway browser captures for later candidate audit"
+    )
+    runway_receipt.add_argument("--manifest", type=Path, required=True)
+    runway_receipt.add_argument("--repository-registry", type=Path, required=True)
+    runway_receipt.add_argument("--model-name", required=True)
+    runway_receipt.add_argument("--job-details", required=True)
+    runway_receipt.add_argument("--generation-settings", required=True)
+    runway_receipt.add_argument("--credit-ledger", required=True)
+    runway_receipt.add_argument("--credit-balance-before")
+    runway_receipt.add_argument("--download-record")
+    runway_receipt.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
@@ -125,7 +174,69 @@ def main() -> None:
             raise SystemExit(str(error)) from error
         print(json.dumps(report, indent=2, sort_keys=True))
         raise SystemExit(0 if report["ready"] else 2)
+    if args.command == "capture" and args.capture_command == "runway-receipt":
+        paths = {
+            "JOB_DETAILS": args.job_details,
+            "GENERATION_SETTINGS": args.generation_settings,
+            "CREDIT_LEDGER": args.credit_ledger,
+        }
+        if args.download_record is not None:
+            paths["DOWNLOAD_RECORD"] = args.download_record
+        if args.credit_balance_before is not None:
+            paths["CREDIT_BALANCE_BEFORE"] = args.credit_balance_before
+        try:
+            receipt = create_runway_job_evidence(
+                VideoCandidateManifest.from_file(args.manifest),
+                repository_registry_file=args.repository_registry,
+                model_name_claim=args.model_name,
+                capture_paths=paths,
+                output=args.output,
+            )
+        except (OSError, ValueError) as error:
+            raise SystemExit(str(error)) from error
+        print(json.dumps(receipt.model_dump(), indent=2, sort_keys=True))
+        raise SystemExit(0)
     if args.command == "audit":
+        if args.audit_command == "video-candidate":
+            try:
+                report = inspect_video_candidate(
+                    VideoCandidateManifest.from_file(args.manifest),
+                    VideoReviewerAssessment.from_file(args.assessment),
+                    source_evidence_manifest=VisualEvidenceManifest.from_file(args.source_manifest),
+                    repository_registry_file=args.repository_registry,
+                    verify_frames=args.verify_frames,
+                    runway_job_evidence=(
+                        RunwayJobEvidence.from_file(args.runway_job_evidence)
+                        if args.runway_job_evidence is not None
+                        else None
+                    ),
+                )
+            except (OSError, ValueError) as error:
+                raise SystemExit(str(error)) from error
+            print(json.dumps(report, indent=2, sort_keys=True))
+            raise SystemExit(0)
+        if args.audit_command == "visual-candidate-review":
+            try:
+                report = inspect_visual_candidate_review(
+                    VisualCandidateAssessment.from_file(args.assessment),
+                    evidence_manifest=VisualEvidenceManifest.from_file(args.manifest),
+                    repository_registry_file=args.repository_registry,
+                )
+            except (OSError, ValueError) as error:
+                raise SystemExit(str(error)) from error
+            print(json.dumps(report, indent=2, sort_keys=True))
+            raise SystemExit(0)
+        if args.audit_command == "visual-review":
+            try:
+                report = inspect_visual_review(
+                    VisualReviewAssessment.from_file(args.assessment),
+                    evidence_manifest=VisualEvidenceManifest.from_file(args.manifest),
+                    repository_registry_file=args.repository_registry,
+                )
+            except (OSError, ValueError) as error:
+                raise SystemExit(str(error)) from error
+            print(json.dumps(report, indent=2, sort_keys=True))
+            raise SystemExit(0)
         if args.audit_command == "visual-evidence":
             try:
                 visual_manifest = VisualEvidenceManifest.from_file(args.manifest)

@@ -22,3 +22,47 @@ decision should identify the asset and digest; recording that decision and any l
 canon, publication, or deployment authority are separate steps. A successful image check does not
 prove visual quality, rights, provenance of uncommitted references, or creator approval. If the
 working image changes after inspection, rerun the command before relying on the displayed path.
+
+For a rejected candidate, a reviewer can bind actionable critique to that same image with a
+separate assessment JSON:
+
+```sh
+.venv/bin/control-plane audit visual-review \
+  --manifest visual-evidence.json \
+  --assessment visual-review-assessment.json \
+  --repository-registry repository-registry.json
+```
+
+The assessment names the exact repository scope, commit, asset ID, and SHA-256, plus a shot ID,
+claimed reviewer, and one or more findings. Each finding declares a category, severity, source
+(`CREATOR_FEEDBACK` or `REVIEWER_VISUAL_OBSERVATION`), concrete observation, image location, and
+proposed retry direction. At least one blocking finding is required, and the image must have a
+declared `REJECTED_...` status. The command re-verifies the image bytes before returning a read-only
+retry packet. It neither sends images to a model nor drives Runway.
+
+Only image identity is independently verified by this command. Reviewer identity, whether a
+reviewer truly viewed the frame, the visual correctness of a finding, and the manifest's declared
+status remain supplied claims. The packet is not a creator approval, production plate, Runway
+prompt execution, or release authorization. A separate reviewer and creator decision are still
+needed before promotion. This is the first evidence-binding slice of a visible production loop,
+not a completed autonomous visual-quality system.
+
+For a newly generated image whose declared status is `PENDING_CREATOR_REVIEW`, use a separate
+candidate assessment rather than the rejected-image retry contract:
+
+```sh
+.venv/bin/control-plane audit visual-candidate-review \
+  --manifest visual-evidence.json \
+  --assessment visual-candidate-assessment.json \
+  --repository-registry repository-registry.json
+```
+
+The assessment uses the same scope, commit, asset ID, digest, shot ID, and claimed reviewer fields.
+Its `checks` array must contain exactly one entry each for `PERSPECTIVE`, `SCALE`, `OCCLUSION`,
+`ANATOMY`, `CONTINUITY`, `PHYSICAL_INTEGRATION`, and `LIGHTING`. Each check has a `verdict`
+(`PASS`, `FAIL`, or `NOT_APPLICABLE`), an `observation`, and an image `location`. A `FAIL` also
+requires a concrete `revision_direction`. `NOT_APPLICABLE` needs an explanatory observation;
+it should not be used to hide uncertainty. The command re-verifies exact committed bytes, rejects
+missing or duplicate checks, and reports whether the reviewer claims any defects. This is a
+structured record of *claimed* visual inspection, not machine-verified visual truth: even seven
+passes cannot grant creator approval, production-plate status, animation, or release authority.
