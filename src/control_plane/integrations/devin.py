@@ -87,8 +87,8 @@ class DevinRuntime:
         )
         body = self._json(response)
         remote_id = body.get("session_id")
-        if not isinstance(remote_id, str) or not remote_id:
-            raise IntegrationResponseError("Devin response lacks a session ID")
+        if not isinstance(remote_id, str) or not DEVIN_ID_PATTERN.fullmatch(remote_id):
+            raise IntegrationResponseError("Devin response has an invalid session ID")
         url = body.get("url")
         return RemoteAgentHandle(
             provider=self.name,
@@ -103,7 +103,13 @@ class DevinRuntime:
             f"/organizations/{self.config.organization_id}/sessions/{handle.remote_id}",
         )
         body = self._json(response)
-        raw_status = str(body.get("status", "unknown")).lower()
+        returned_id = body.get("session_id")
+        if returned_id != handle.remote_id:
+            raise IntegrationResponseError("Devin response session ID does not match the handle")
+        status_value = body.get("status")
+        if not isinstance(status_value, str) or not status_value:
+            raise IntegrationResponseError("Devin returned an invalid status")
+        raw_status = status_value.lower()
         mapping = {
             "new": RemoteRunState.QUEUED,
             "queued": RemoteRunState.QUEUED,
@@ -119,7 +125,9 @@ class DevinRuntime:
             handle=handle,
             state=mapping.get(raw_status, RemoteRunState.UNKNOWN),
             raw_status=raw_status,
-            output={key: value for key, value in body.items() if key not in {"secrets", "token"}},
+            # This adapter is lifecycle-only. Provider prose, PR claims, and arbitrary
+            # nested fields are not trusted implementation or validation evidence.
+            output={"session_id": handle.remote_id, "status": raw_status},
         )
 
     def cancel(self, handle: RemoteAgentHandle) -> bool:

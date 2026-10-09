@@ -59,7 +59,7 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy src
-      - run: pytest -m "not live_provider" --cov=control_plane --cov-report=term-missing
+      - run: pytest -m "not live_provider" --cov=control_plane --cov-report=term-missing --cov-fail-under=85
 
   package:
     runs-on: ubuntu-latest

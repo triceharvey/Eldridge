@@ -54,11 +54,23 @@ def test_mock_provider_plan_passes_without_oci_credentials(tmp_path: Path) -> No
     executable = shutil.which("tofu")
     if executable is None:
         pytest.skip("pinned local OpenTofu binary is not installed")
+    # This is an offline suite. A local provider installation is required to
+    # resolve the schema even though the test mocks all OCI API interactions.
+    mirror = PROFILE / ".terraform" / "providers"
+    if not mirror.is_dir():
+        pytest.skip("OCI provider is not locally initialized for offline OpenTofu test")
 
     profile = tmp_path / "oci-canary"
     shutil.copytree(PROFILE, profile, ignore=shutil.ignore_patterns(".terraform"))
     subprocess.run(  # noqa: S603 - executable is resolved from the fixed OpenTofu name
-        [executable, "init", "-backend=false", "-input=false", "-lockfile=readonly"],
+        [
+            executable,
+            "init",
+            "-backend=false",
+            "-input=false",
+            "-lockfile=readonly",
+            f"-plugin-dir={mirror}",
+        ],
         cwd=profile,
         check=True,
         capture_output=True,

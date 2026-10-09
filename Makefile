@@ -11,16 +11,16 @@ typecheck:
 	mypy src
 
 test:
-	pytest -m 'not postgres'
+	PYTHONPATH=src pytest -m 'not postgres'
 
 test-postgres:
-	CONTROL_PLANE_TEST_DATABASE_URL=$${CONTROL_PLANE_DATABASE_URL} pytest -m postgres
+	CONTROL_PLANE_TEST_DATABASE_URL=$${CONTROL_PLANE_DATABASE_URL} PYTHONPATH=src pytest -m postgres
 
 iac-compatibility:
-	pytest -q tests/test_iac_compatibility_live.py
+	PYTHONPATH=src pytest -q tests/test_iac_compatibility_live.py
 
 terraform-career-lab:
-	pytest -q tests/test_terraform_career_lab_live.py
+	PYTHONPATH=src pytest -q tests/test_terraform_career_lab_live.py
 
 oci-canary-test:
 	tofu -chdir=deployment/oci-canary init -backend=false -input=false -lockfile=readonly
