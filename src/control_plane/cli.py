@@ -12,6 +12,12 @@ from control_plane.audit_export import (
     build_provider_usage_report,
     verify_audit_export,
 )
+from control_plane.audit_signing import (
+    load_private_key,
+    load_public_key,
+    sign_audit_export,
+    verify_signed_audit_export,
+)
 from control_plane.config import Settings
 from control_plane.domain import ApprovalAction, ApprovalDecision, WorkflowState
 from control_plane.operator_workflow import (
@@ -79,6 +85,13 @@ def run_demo(database_url: str) -> int:
     return 0
 
 
+def _read_json(path: Path, label: str) -> object:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise SystemExit(f"{label} is unreadable or invalid JSON") from error
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="AI engineering control-plane CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -117,6 +130,14 @@ def main() -> None:
     audit_export.add_argument("--output", type=Path, required=True)
     audit_verify = audit_subparsers.add_parser("verify")
     audit_verify.add_argument("--bundle", type=Path, required=True)
+    audit_verify.add_argument("--signature", type=Path, help="detached signature envelope")
+    audit_verify.add_argument("--public-key", type=Path, help="Ed25519 public key (PEM)")
+    audit_sign = audit_subparsers.add_parser(
+        "sign", help="write a detached Ed25519 signature for a verified bundle"
+    )
+    audit_sign.add_argument("--bundle", type=Path, required=True)
+    audit_sign.add_argument("--private-key", type=Path, required=True)
+    audit_sign.add_argument("--output", type=Path, required=True)
     provider_usage = audit_subparsers.add_parser(
         "provider-usage", help="summarize recorded provider attempts without model content"
     )
@@ -270,19 +291,52 @@ def main() -> None:
                 engine.dispose()
             print(json.dumps(report, indent=2, sort_keys=True))
             raise SystemExit(0)
-        if args.audit_command == "verify":
+        if args.audit_command == "sign":
+            payload = _read_json(args.bundle, "audit bundle")
+            if args.output.exists():
+                raise SystemExit("audit signature output already exists")
+            if not args.output.parent.is_dir():
+                raise SystemExit("audit signature parent directory does not exist")
             try:
-                payload = json.loads(args.bundle.read_text(encoding="utf-8"))
-            except (OSError, UnicodeError, json.JSONDecodeError) as error:
-                raise SystemExit("audit bundle is unreadable or invalid JSON") from error
-            valid = verify_audit_export(payload)
+                if args.private_key.stat().st_mode & 0o077:
+                    raise ValueError("signing key must not be readable by group or others")
+                private_key = load_private_key(args.private_key.read_bytes())
+                envelope = sign_audit_export(payload, private_key)
+                args.output.write_text(
+                    json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                )
+            except (OSError, ValueError) as error:
+                raise SystemExit(str(error)) from error
             print(
                 json.dumps(
-                    {"bundle": str(args.bundle), "valid": valid},
+                    {
+                        "bundle_digest": envelope["bundle_digest"],
+                        "key_id": envelope["key_id"],
+                        "signature": str(args.output),
+                    },
                     indent=2,
                     sort_keys=True,
                 )
             )
+            raise SystemExit(0)
+        if args.audit_command == "verify":
+            payload = _read_json(args.bundle, "audit bundle")
+            if (args.signature is None) != (args.public_key is None):
+                raise SystemExit("--signature and --public-key must be given together")
+            result: dict[str, object] = {"bundle": str(args.bundle)}
+            if args.signature is None:
+                valid = verify_audit_export(payload)
+            else:
+                signature_envelope = _read_json(args.signature, "audit signature")
+                try:
+                    public_key = load_public_key(args.public_key.read_bytes())
+                except (OSError, ValueError) as error:
+                    raise SystemExit(str(error)) from error
+                valid = verify_signed_audit_export(payload, signature_envelope, public_key)
+                result["signature"] = str(args.signature)
+                result["signed"] = valid
+            result["valid"] = valid
+            print(json.dumps(result, indent=2, sort_keys=True))
             raise SystemExit(0 if valid else 2)
         if args.output.exists():
             raise SystemExit("audit export output already exists")
