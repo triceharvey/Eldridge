@@ -8,7 +8,7 @@ These products expose different authority and lifecycle boundaries, so the contr
 |---|---|---|---|
 | Claude API | Model provider | Anthropic Messages API with structured client tool proposals | Adapter implemented, disabled by default |
 | Claude Code | Model provider | Subscription-authenticated CLI with no tools or repository access | Live synthetic canary passed; disabled by default |
-| Devin | Remote agent runtime | Devin v3 organization sessions using a least-privilege service user | Lifecycle adapter implemented, disabled by default |
+| Devin | Remote agent runtime | Devin v3 organization sessions using a least-privilege service user; human-dispatched, Git-verified handoff | Dispatch, sync, and cancel implemented, disabled by default |
 | Windsurf Cascade | Human/IDE agent and MCP client | Git handoff plus authenticated control-plane MCP tools | Local Streamable HTTP boundary implemented; headless execution not claimed |
 
 ## Claude
@@ -22,6 +22,41 @@ The adapter is disabled by default. Enabling it will require a repository data c
 Devin is represented as a remote runtime because a session has its own lifecycle, repository access, cost units, status, messages, and potential pull requests. The current v3 API supports organization-scoped sessions and service-user RBAC. The adapter creates, polls, and cancels sessions; applies workflow/task/idempotency tags; sets a maximum ACU budget; and never supplies `bypass_approval`, inline session secrets, or organization secret IDs.
 
 Activation requires a Devin organization ID and a service user restricted to the minimum session permissions. A personal token or enterprise-wide administrator token is not the default. See Devin's [v3 migration guide](https://docs.devin.ai/api-reference/getting-started/migration-guide), [common flows](https://docs.devin.ai/api-reference/common-flows), and [RBAC reference](https://docs.devin.ai/api-reference/v3/overview).
+
+### Devin sessions
+
+The flow has three human-only calls, each requiring `DISPATCH_REMOTE_AGENT`:
+
+```sh
+curl -X POST "$API/tasks/$TASK/devin/dispatch" -H 'content-type: application/json' \
+  -d '{"max_cost_units": 3}'
+curl -X POST "$API/tasks/$TASK/devin/sync"     # repeat until the task leaves RUNNING
+curl -X POST "$API/tasks/$TASK/devin/cancel"   # optional
+```
+
+Dispatch commits a digest-bound handoff before contacting Devin, then creates a session with the
+attempt ID as idempotency key, the handoff digest as a tag, the ACU limit, and a structured-output
+schema asking for the pushed branch, its head commit, a test claim, and a summary. Sync maps v3
+`status_detail` (`finished`, `waiting_for_user`, `waiting_for_approval`) correctly, renews the
+remote lease while the session is in flight, and on completion fetches the reported branch into a
+new local `devin/task-<id>-a<n>` branch. Only a commit that is the branch head, descends from the
+handoff base, and changes registered writable paths becomes `DEVIN_IMPLEMENTATION_EVIDENCE`. The
+test claim and reported pull-request URLs are non-authoritative; the workflow still runs its own
+test, security, and code-review stages. Devin itself holds no control-plane credential.
+
+The repository registry entry must opt in:
+
+```json
+{
+  "scope_id": "owner/repository",
+  "path": "/absolute/path/to/clone",
+  "writable_paths": ["src", "tests"],
+  "remote_agent_repository": "owner/repository"
+}
+```
+
+The clone's `origin` must be that GitHub repository, and fetches run with prompts disabled, so
+private repositories need non-interactive credentials configured for that clone.
 
 ## Windsurf
 
@@ -62,7 +97,7 @@ No integration may:
 
 Provider and runtime credentials are referenced by opaque names and resolved only after policy authorization. The runtime can load the strict, versioned activation document described in the [provider activation runbook](provider-activation.md); without that explicit file it still uses only mock providers. The current adapters accept injected HTTP clients for deterministic contract testing.
 
-Devin remains lifecycle-only in Phase 2. It is intentionally excluded from ordinary task routing until Phase 3 can bind a remote commit or pull request to independently ingested CI and validation evidence.
+Devin stays out of ordinary task routing. A human can dispatch one implementation task to a Devin session, and its result is accepted only after Eldridge fetches the reported branch from the registered GitHub repository and verifies the commit with the same Git checks used for Windsurf. See [Devin sessions](#devin-sessions) and ADR-0044.
 
 ## Strength-aware routing
 

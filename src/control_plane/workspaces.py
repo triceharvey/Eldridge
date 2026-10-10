@@ -13,6 +13,9 @@ from control_plane.tools import validate_relative_path
 
 SAFE_TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,63}$")
 SAFE_SCOPE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
+GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$")
+REMOTE_AGENT_BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(/[A-Za-z0-9._-]{1,64}){0,4}$")
+HANDOFF_BRANCH_PREFIXES = ("codex/task-", "devin/task-")
 SAFE_GIT_OPTIONS = (
     "-c",
     "core.hooksPath=/dev/null",
@@ -47,6 +50,7 @@ class RepositoryRegistration:
     path: Path
     base_revision: str = "HEAD"
     writable_paths: tuple[str, ...] = ()
+    remote_agent_repository: str | None = None
 
 
 class RepositoryRegistry:
@@ -93,9 +97,8 @@ class RepositoryRegistry:
         result_revision: str,
     ) -> tuple[str, ...]:
         registration = self.resolve(scope_id)
-        if not SAFE_TASK_ID.fullmatch(branch.removeprefix("codex/task-")) or not branch.startswith(
-            "codex/task-"
-        ):
+        prefix = next((item for item in HANDOFF_BRANCH_PREFIXES if branch.startswith(item)), None)
+        if prefix is None or not SAFE_TASK_ID.fullmatch(branch.removeprefix(prefix)):
             raise WorkspaceError("handoff branch is invalid")
         resolved_base = self.resolve_commit(scope_id, base_revision)
         if resolved_base != base_revision:
@@ -140,6 +143,67 @@ class RepositoryRegistry:
                 raise WorkspaceError("handoff changed a file outside registered writable paths")
         return changed_files
 
+    def fetch_remote_agent_branch(
+        self, scope_id: str, *, remote_branch: str, local_branch: str
+    ) -> str:
+        """Fetch a branch a remote agent pushed into a new local handoff branch.
+
+        The fetch uses the registered repository's ``origin`` only after checking that its
+        configured URL is the GitHub repository the operator registered for remote agents. It
+        never overwrites an existing local branch, never fetches tags or submodules, and cannot
+        prompt for credentials.
+        """
+
+        registration = self.resolve(scope_id)
+        expected = registration.remote_agent_repository
+        if expected is None:
+            raise WorkspaceError("repository scope is not registered for remote agents")
+        if (
+            not REMOTE_AGENT_BRANCH.fullmatch(remote_branch)
+            or ".." in remote_branch
+            or remote_branch.endswith(".lock")
+        ):
+            raise WorkspaceError("remote agent branch name is invalid")
+        if not local_branch.startswith("devin/task-") or not SAFE_TASK_ID.fullmatch(
+            local_branch.removeprefix("devin/task-")
+        ):
+            raise WorkspaceError("local handoff branch is invalid")
+        if self.branch_exists(scope_id, local_branch):
+            raise WorkspaceError("local handoff branch already exists")
+        origin = self._git(registration.path, "config", "--local", "--get", "remote.origin.url")
+        accepted = {
+            f"https://github.com/{expected}",
+            f"https://github.com/{expected}.git",
+            f"git@github.com:{expected}.git",
+            f"ssh://git@github.com/{expected}.git",
+        }
+        if origin not in accepted:
+            raise WorkspaceError("origin does not match the registered remote agent repository")
+        result = subprocess.run(  # noqa: S603
+            [
+                self.git,
+                *SAFE_GIT_OPTIONS,
+                "-C",
+                str(registration.path),
+                "fetch",
+                "--no-tags",
+                "--no-recurse-submodules",
+                "--no-write-fetch-head",
+                "origin",
+                f"refs/heads/{remote_branch}:refs/heads/{local_branch}",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=safe_git_environment() | {"GIT_TERMINAL_PROMPT": "0"},
+        )
+        if result.returncode != 0:
+            raise WorkspaceError((result.stderr.strip() or "Git fetch failed")[:1000])
+        return self._git(
+            registration.path, "rev-parse", "--verify", f"refs/heads/{local_branch}^{{commit}}"
+        )
+
     @classmethod
     def from_file(cls, config_path: Path) -> RepositoryRegistry:
         path = config_path.resolve()
@@ -152,7 +216,13 @@ class RepositoryRegistry:
         if not isinstance(payload, list):
             raise WorkspaceError("repository registry must be a list")
         registrations: list[RepositoryRegistration] = []
-        allowed_fields = {"scope_id", "path", "base_revision", "writable_paths"}
+        allowed_fields = {
+            "scope_id",
+            "path",
+            "base_revision",
+            "writable_paths",
+            "remote_agent_repository",
+        }
         for item in payload:
             if not isinstance(item, dict) or set(item) - allowed_fields:
                 raise WorkspaceError("repository registry entry has invalid fields")
@@ -160,6 +230,9 @@ class RepositoryRegistry:
             repository_path = item.get("path")
             base_revision = item.get("base_revision", "HEAD")
             writable_paths = item.get("writable_paths", [])
+            remote_agent_repository = item.get("remote_agent_repository")
+            if remote_agent_repository is not None and not isinstance(remote_agent_repository, str):
+                raise WorkspaceError("repository registry entry has invalid values")
             if (
                 not isinstance(scope_id, str)
                 or not isinstance(repository_path, str)
@@ -174,6 +247,7 @@ class RepositoryRegistry:
                     path=Path(repository_path),
                     base_revision=base_revision,
                     writable_paths=tuple(writable_paths),
+                    remote_agent_repository=remote_agent_repository,
                 )
             )
         return cls(tuple(registrations))
@@ -206,11 +280,17 @@ class RepositoryRegistry:
             raise WorkspaceError("registered repository has executable Git configuration")
         for writable_path in registration.writable_paths:
             validate_relative_path(writable_path)
+        if registration.remote_agent_repository is not None:
+            if not GITHUB_REPOSITORY.fullmatch(registration.remote_agent_repository):
+                raise WorkspaceError("remote agent repository must be a GitHub owner/name")
+            if not registration.writable_paths:
+                raise WorkspaceError("remote agent repositories require writable paths")
         self._registrations[registration.scope_id] = RepositoryRegistration(
             scope_id=registration.scope_id,
             path=path,
             base_revision=registration.base_revision,
             writable_paths=registration.writable_paths,
+            remote_agent_repository=registration.remote_agent_repository,
         )
 
     def _git(self, repository: Path, *arguments: str) -> str:
