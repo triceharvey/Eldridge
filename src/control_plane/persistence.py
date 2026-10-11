@@ -916,6 +916,12 @@ BUILTIN_PRINCIPALS = (
         AgentRole.CI_INTEGRATION,
         "GitHub CI Webhook",
     ),
+    (
+        "devin-remote",
+        PrincipalType.INTEGRATION,
+        AgentRole.REMOTE_AGENT_INTEGRATION,
+        "Devin Remote Session",
+    ),
 )
 
 

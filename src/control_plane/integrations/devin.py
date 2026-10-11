@@ -104,6 +104,28 @@ class DevinRuntime:
         )
         body = self._json(response)
         raw_status = str(body.get("status", "unknown")).lower()
+        raw_detail = body.get("status_detail")
+        detail = raw_detail.lower() if isinstance(raw_detail, str) else None
+        return RemoteAgentStatus(
+            handle=handle,
+            state=self._map_state(raw_status, detail),
+            raw_status=raw_status if detail is None else f"{raw_status}/{detail}",
+            output={key: value for key, value in body.items() if key not in {"secrets", "token"}},
+        )
+
+    @staticmethod
+    def _map_state(status: str, detail: str | None) -> RemoteRunState:
+        """Map Devin v3 status and status_detail to a lifecycle state.
+
+        A v3 session that has finished its work usually remains ``running`` with
+        ``status_detail`` ``finished`` rather than moving to ``exit``; a session waiting on a
+        person reports ``waiting_for_user`` or ``waiting_for_approval``.
+        """
+
+        if status == "running" and detail == "finished":
+            return RemoteRunState.SUCCEEDED
+        if status == "running" and detail in {"waiting_for_user", "waiting_for_approval"}:
+            return RemoteRunState.AWAITING_INPUT
         mapping = {
             "new": RemoteRunState.QUEUED,
             "queued": RemoteRunState.QUEUED,
@@ -115,12 +137,7 @@ class DevinRuntime:
             "error": RemoteRunState.FAILED,
             "terminated": RemoteRunState.CANCELLED,
         }
-        return RemoteAgentStatus(
-            handle=handle,
-            state=mapping.get(raw_status, RemoteRunState.UNKNOWN),
-            raw_status=raw_status,
-            output={key: value for key, value in body.items() if key not in {"secrets", "token"}},
-        )
+        return mapping.get(status, RemoteRunState.UNKNOWN)
 
     def cancel(self, handle: RemoteAgentHandle) -> bool:
         self._validate_handle(handle)

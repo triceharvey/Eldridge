@@ -27,7 +27,7 @@ Subscription policy defines separate ceilings for one evaluation execution and o
 workflow. A provider that exhausts the workflow ceiling becomes routing-ineligible for later tasks;
 only another independently configured and policy-eligible provider may continue the workflow.
 
-Devin activation currently exposes only its bounded remote-session lifecycle: create, poll, and cancel with repository scope, tags, a maximum ACU limit, and optional structured-output schema. It is not placed in the normal task-provider routing pool yet. Phase 3 must first ingest Devin's commit or pull-request revision and independently validate its CI evidence; otherwise a remote result could bypass the same revision-bound controls applied to local worktrees.
+Devin activation enables human-dispatched implementation sessions (ADR-0044). Devin is still not placed in the normal task-provider routing pool: an operator dispatches a specific task, and the session's result is accepted only after Eldridge fetches the reported branch and verifies the commit against the registered repository and writable paths. Each repository must also opt in with `remote_agent_repository` in the repository registry. See the Devin section of the [interoperability notes](interoperability.md#devin-sessions).
 
 Every routing record stores both the capability-router version and provider-activation policy version. This makes later evidence and incident review attributable to the exact configured policy.
 
