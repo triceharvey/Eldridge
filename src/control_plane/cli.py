@@ -19,6 +19,7 @@ from control_plane.audit_signing import (
     verify_signed_audit_export,
 )
 from control_plane.config import Settings
+from control_plane.devin_cli import add_devin_parser, run_devin_command
 from control_plane.domain import ApprovalAction, ApprovalDecision, WorkflowState
 from control_plane.operator_workflow import (
     OperatorWorkflowManifest,
@@ -171,6 +172,7 @@ def main() -> None:
     video_candidate.add_argument("--repository-registry", type=Path, required=True)
     video_candidate.add_argument("--verify-frames", action="store_true")
     video_candidate.add_argument("--runway-job-evidence", type=Path)
+    add_devin_parser(subparsers)
     capture = subparsers.add_parser("capture", help="package already-saved local evidence")
     capture_subparsers = capture.add_subparsers(dest="capture_command", required=True)
     runway_receipt = capture_subparsers.add_parser(
@@ -188,6 +190,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.command == "demo":
         raise SystemExit(run_demo(args.database_url))
+    if args.command == "devin":
+        raise SystemExit(run_devin_command(args))
     if args.command == "production":
         try:
             report = evaluate_production_readiness_file(args.manifest)
