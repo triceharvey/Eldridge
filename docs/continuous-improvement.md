@@ -83,6 +83,20 @@ Direct task success is useful but incomplete. Later phases should correlate prod
 
 Provider-generated scores, hidden chain-of-thought, free-form self-critiques, and model agreement are not routing evidence. Evaluation fixtures and policy changes must be versioned and reviewable. Suspicious repositories remain contained so they cannot poison prompts, validators, or the evidence pipeline.
 
+## CI regression feedback
+
+CI enforces an 85% repository-wide coverage floor in addition to lint, formatting, type checks,
+dependency audit, migrations, tests, and non-root image builds. This is a regression alarm, not proof
+that the untested 15% is safe or that an external provider completed a real task. The test harness
+fails if it imports `control_plane` from a different checkout, preventing a green run against stale
+editable-install code. The OCI mock-plan test uses only an already-installed locked provider; it
+skips with an explicit reason when that local dependency is absent instead of downloading during an
+otherwise offline test run. CI currently does not install OpenTofu, so this check remains a local
+qualification unless a separately reviewed CI job provisions the pinned tool and provider.
+
+Failed checks are inputs to a human-reviewed change and another CI cycle. They never authorize a
+model to weaken a test, lower the floor, edit policy, merge, or deploy autonomously.
+
 ## Deployment-cost review
 
 At each Phase 4 exit review, compare the approved local profile with current open-source,

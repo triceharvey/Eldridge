@@ -1,8 +1,10 @@
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
+import control_plane
 from control_plane.persistence import (
     initialize_database,
     make_engine,
@@ -10,6 +12,15 @@ from control_plane.persistence import (
     seed_principals,
 )
 from control_plane.service import ControlPlaneService
+
+_checkout_package = Path(__file__).resolve().parents[1] / "src" / "control_plane"
+_imported_package = Path(control_plane.__file__).resolve().parent
+if _imported_package != _checkout_package:
+    raise pytest.UsageError(
+        "Tests imported control_plane from a different checkout: "
+        f"{_imported_package}; expected {_checkout_package}. "
+        "Install this checkout or run with PYTHONPATH=src."
+    )
 
 
 @pytest.fixture

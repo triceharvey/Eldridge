@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -87,8 +88,8 @@ class DevinRuntime:
         )
         body = self._json(response)
         remote_id = body.get("session_id")
-        if not isinstance(remote_id, str) or not remote_id:
-            raise IntegrationResponseError("Devin response lacks a session ID")
+        if not isinstance(remote_id, str) or not DEVIN_ID_PATTERN.fullmatch(remote_id):
+            raise IntegrationResponseError("Devin response has an invalid session ID")
         url = body.get("url")
         return RemoteAgentHandle(
             provider=self.name,
@@ -103,14 +104,48 @@ class DevinRuntime:
             f"/organizations/{self.config.organization_id}/sessions/{handle.remote_id}",
         )
         body = self._json(response)
-        raw_status = str(body.get("status", "unknown")).lower()
+        returned_id = body.get("session_id")
+        if returned_id != handle.remote_id:
+            raise IntegrationResponseError("Devin response session ID does not match the handle")
+        status_value = body.get("status")
+        if not isinstance(status_value, str) or not re.fullmatch(r"[A-Za-z_-]{1,64}", status_value):
+            raise IntegrationResponseError("Devin returned an invalid status")
+        raw_status = status_value.lower()
         raw_detail = body.get("status_detail")
+        if raw_detail is not None and (
+            not isinstance(raw_detail, str) or not re.fullmatch(r"[A-Za-z_-]{1,64}", raw_detail)
+        ):
+            raise IntegrationResponseError("Devin returned an invalid status detail")
         detail = raw_detail.lower() if isinstance(raw_detail, str) else None
+        output: dict[str, object] = {"session_id": handle.remote_id, "status": raw_status}
+        if detail is not None:
+            output["status_detail"] = detail
+        structured = body.get("structured_output")
+        if isinstance(structured, dict):
+            try:
+                structured_size = len(json.dumps(structured, separators=(",", ":")))
+            except (TypeError, ValueError, RecursionError) as exc:
+                raise IntegrationResponseError("Devin structured output is invalid") from exc
+            if structured_size > 16_384:
+                raise IntegrationResponseError("Devin structured output is too large")
+            output["structured_output"] = structured
+        pulls = body.get("pull_requests")
+        if isinstance(pulls, list):
+            reported_pulls = [
+                {"pr_url": url}
+                for item in pulls[:10]
+                if isinstance(item, dict)
+                and isinstance((url := item.get("pr_url")), str)
+                and len(url) <= 2_048
+                and url.startswith("https://github.com/")
+            ]
+            if reported_pulls:
+                output["pull_requests"] = reported_pulls
         return RemoteAgentStatus(
             handle=handle,
             state=self._map_state(raw_status, detail),
             raw_status=raw_status if detail is None else f"{raw_status}/{detail}",
-            output={key: value for key, value in body.items() if key not in {"secrets", "token"}},
+            output=output,
         )
 
     @staticmethod
@@ -165,6 +200,8 @@ class DevinRuntime:
 
     @staticmethod
     def _json(response: httpx.Response) -> dict[str, Any]:
+        if len(response.content) > 1_048_576:
+            raise IntegrationResponseError("Devin returned an oversized response")
         try:
             body = response.json()
         except ValueError as exc:

@@ -1,3 +1,4 @@
+import secrets
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -20,12 +21,14 @@ from control_plane.domain import (
 )
 from control_plane.integrations import (
     DevinRuntime,
+    DevinRuntimeConfig,
     RemoteAgentHandle,
     RemoteAgentRequest,
     RemoteAgentStatus,
     RemoteRunState,
 )
 from control_plane.persistence import Artifact, TaskAttempt
+from control_plane.secrets import StaticSecretResolver
 from control_plane.service import ControlPlaneService
 from control_plane.workspaces import RepositoryRegistration, RepositoryRegistry
 
@@ -230,6 +233,81 @@ def test_devin_dispatch_sync_and_git_verified_evidence(devin_fixture: Fixture) -
         assert artifact is not None
         assert artifact.artifact_type == "DEVIN_IMPLEMENTATION_EVIDENCE"
         assert artifact.revision == revision
+
+
+def test_http_adapter_and_git_verified_ingestion_work_together(devin_fixture: Fixture) -> None:
+    """A mocked HTTP session still must pass the real adapter and Git evidence gate."""
+    branch = "devin/1760140000-implement-task"
+    secret_ref = secrets.token_urlsafe(12)
+    response_claim: dict[str, object] = {}
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.method)
+        assert request.url.host == "api.devin.ai"
+        assert request.headers["Authorization"] == "Bearer synthetic-token"
+        if request.method == "POST":
+            return httpx.Response(200, json={"session_id": "devin-abc123"})
+        return httpx.Response(
+            200,
+            json={
+                "session_id": "devin-abc123",
+                "status": "running",
+                "status_detail": "finished",
+                "structured_output": response_claim,
+                "pull_requests": [
+                    {"pr_url": "https://github.com/owner/repository/pull/7"},
+                    {"pr_url": "https://attacker.invalid/private"},
+                ],
+                "token": "must-not-be-exposed",
+                "messages": [{"credentials": {"key": "must-not-be-exposed"}}],
+            },
+        )
+
+    runtime = DevinRuntime(
+        DevinRuntimeConfig(
+            enabled=True,
+            organization_id="org-1",
+            service_token_ref=secret_ref,
+            maximum_cost_units=5,
+        ),
+        StaticSecretResolver({secret_ref: "synthetic-token"}),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    service = devin_fixture.service
+    service.devin_integration.runtime = runtime
+    task = _implementation_task(service, key="devin-adapter-to-git")
+    dispatched = service.dispatch_devin_task(
+        task_id=str(task["id"]), principal_id="dev-operator", max_cost_units=2
+    )
+    with service.session_factory() as session:
+        attempt = session.get(TaskAttempt, str(dispatched["attempt_id"]))
+        assert attempt is not None
+        base_revision = str(attempt.output["handoff"]["base_revision"])
+    revision = _devin_pushes(devin_fixture, base_revision=base_revision, branch=branch)
+    response_claim.update(
+        branch=branch,
+        result_revision=revision,
+        tests_passed=True,
+        test_summary="provider claim only",
+        summary="implemented scoped change",
+    )
+    handle = RemoteAgentHandle(provider="devin", remote_id="devin-abc123", url=None)
+    status = runtime.poll(handle)
+    assert status.state is RemoteRunState.SUCCEEDED
+    assert status.output == {
+        "session_id": "devin-abc123",
+        "status": "running",
+        "status_detail": "finished",
+        "structured_output": response_claim,
+        "pull_requests": [{"pr_url": "https://github.com/owner/repository/pull/7"}],
+    }
+
+    result = service.sync_devin_task(task_id=str(task["id"]), principal_id="dev-operator")
+    assert result["task_status"] == TaskStatus.SUCCEEDED.value
+    assert result["evidence"]["result_revision"] == revision
+    assert result["evidence"]["test_claim_authoritative"] is False
+    assert calls == ["POST", "GET", "GET"]
 
 
 def test_only_humans_dispatch_devin(devin_fixture: Fixture) -> None:
