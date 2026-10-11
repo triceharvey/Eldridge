@@ -106,6 +106,8 @@ def build_runtime(
         provider_policy_version=activated.policy_version if activated else "built-in/mock-v1",
         routing_objective=RoutingObjective(selected.routing_objective),
         github_app=github_app,
+        remote_agent_runtime=activated.devin_runtime if activated else None,
+        remote_agent_lease_seconds=selected.remote_agent_lease_seconds,
     )
     return Runtime(
         settings=selected,

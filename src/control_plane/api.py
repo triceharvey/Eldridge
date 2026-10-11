@@ -79,6 +79,10 @@ class ReconciliationCreate(BaseModel):
     rationale: str = Field(min_length=1, max_length=2_000)
 
 
+class DevinDispatchCreate(BaseModel):
+    max_cost_units: int = Field(ge=1, le=100)
+
+
 class PullRequestCreate(BaseModel):
     head_branch: str = Field(min_length=1, max_length=200)
     title: str = Field(min_length=1, max_length=256)
@@ -438,6 +442,33 @@ def create_app(
             decision=request.decision,
             rationale=request.rationale,
         )
+
+    @app.post("/tasks/{task_id}/devin/dispatch", status_code=status.HTTP_201_CREATED)
+    def dispatch_devin_task(
+        task_id: str,
+        request: DevinDispatchCreate,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.dispatch_devin_task(
+            task_id=task_id, principal_id=principal_id, max_cost_units=request.max_cost_units
+        )
+
+    @app.post("/tasks/{task_id}/devin/sync")
+    def sync_devin_task(
+        task_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.sync_devin_task(task_id=task_id, principal_id=principal_id)
+
+    @app.post("/tasks/{task_id}/devin/cancel")
+    def cancel_devin_task(
+        task_id: str,
+        principal_id: Annotated[str, Depends(principal_dependency)],
+        service: Annotated[ControlPlaneService, Depends(service_dependency)],
+    ) -> dict[str, Any]:
+        return service.cancel_devin_task(task_id=task_id, principal_id=principal_id)
 
     @app.post("/approvals", status_code=status.HTTP_201_CREATED)
     def create_approval(

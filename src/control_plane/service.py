@@ -23,6 +23,7 @@ from control_plane.deployment import (
     EnvironmentClassification,
 )
 from control_plane.deployment_recovery import DeploymentRecoveryService
+from control_plane.devin_integration import DevinIntegrationService
 from control_plane.domain import (
     TASK_CAPABILITY,
     TASK_ROLE,
@@ -59,6 +60,7 @@ from control_plane.git_pull_requests import GitPullRequestService
 from control_plane.github_app import (
     GitHubAppClient,
 )
+from control_plane.integrations import RemoteAgentRuntime
 from control_plane.learning import ProviderEvidenceStore
 from control_plane.persistence import (
     Approval,
@@ -133,6 +135,8 @@ class ControlPlaneService:
         enable_local_deployment: bool = False,
         evaluator: MultiModelEvaluator | None = None,
         evaluation_validators: tuple[EvaluationValidator, ...] | None = None,
+        remote_agent_runtime: RemoteAgentRuntime | None = None,
+        remote_agent_lease_seconds: int = 4 * 60 * 60,
     ) -> None:
         self.session_factory = session_factory
         self.provider = provider or MockProvider()
@@ -277,6 +281,14 @@ class ControlPlaneService:
             lease_seconds=self.lease_seconds,
             repository_registry=self.repository_registry,
             workflow_tasks=self.workflow_tasks,
+        )
+        self.devin_integration = DevinIntegrationService(
+            self.session_factory,
+            self.policy,
+            runtime=remote_agent_runtime,
+            repository_registry=self.repository_registry,
+            workflow_tasks=self.workflow_tasks,
+            lease_seconds=remote_agent_lease_seconds,
         )
 
     def create_workflow(
@@ -916,6 +928,19 @@ class ControlPlaneService:
 
     def reclaim_expired_tasks(self, *, worker_id: str) -> int:
         return self.workflow_tasks.reclaim_expired_tasks(worker_id=worker_id)
+
+    def dispatch_devin_task(
+        self, *, task_id: str, principal_id: str, max_cost_units: int
+    ) -> dict[str, Any]:
+        return self.devin_integration.dispatch_devin_task(
+            task_id=task_id, principal_id=principal_id, max_cost_units=max_cost_units
+        )
+
+    def sync_devin_task(self, *, task_id: str, principal_id: str) -> dict[str, Any]:
+        return self.devin_integration.sync_devin_task(task_id=task_id, principal_id=principal_id)
+
+    def cancel_devin_task(self, *, task_id: str, principal_id: str) -> dict[str, Any]:
+        return self.devin_integration.cancel_devin_task(task_id=task_id, principal_id=principal_id)
 
     def claim_windsurf_task(self, *, task_id: str, principal_id: str) -> dict[str, Any]:
         return self.windsurf_integration.claim_windsurf_task(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -107,9 +108,59 @@ class DevinRuntime:
         if returned_id != handle.remote_id:
             raise IntegrationResponseError("Devin response session ID does not match the handle")
         status_value = body.get("status")
-        if not isinstance(status_value, str) or not status_value:
+        if not isinstance(status_value, str) or not re.fullmatch(r"[A-Za-z_-]{1,64}", status_value):
             raise IntegrationResponseError("Devin returned an invalid status")
         raw_status = status_value.lower()
+        raw_detail = body.get("status_detail")
+        if raw_detail is not None and (
+            not isinstance(raw_detail, str) or not re.fullmatch(r"[A-Za-z_-]{1,64}", raw_detail)
+        ):
+            raise IntegrationResponseError("Devin returned an invalid status detail")
+        detail = raw_detail.lower() if isinstance(raw_detail, str) else None
+        output: dict[str, object] = {"session_id": handle.remote_id, "status": raw_status}
+        if detail is not None:
+            output["status_detail"] = detail
+        structured = body.get("structured_output")
+        if isinstance(structured, dict):
+            try:
+                structured_size = len(json.dumps(structured, separators=(",", ":")))
+            except (TypeError, ValueError, RecursionError) as exc:
+                raise IntegrationResponseError("Devin structured output is invalid") from exc
+            if structured_size > 16_384:
+                raise IntegrationResponseError("Devin structured output is too large")
+            output["structured_output"] = structured
+        pulls = body.get("pull_requests")
+        if isinstance(pulls, list):
+            reported_pulls = [
+                {"pr_url": url}
+                for item in pulls[:10]
+                if isinstance(item, dict)
+                and isinstance((url := item.get("pr_url")), str)
+                and len(url) <= 2_048
+                and url.startswith("https://github.com/")
+            ]
+            if reported_pulls:
+                output["pull_requests"] = reported_pulls
+        return RemoteAgentStatus(
+            handle=handle,
+            state=self._map_state(raw_status, detail),
+            raw_status=raw_status if detail is None else f"{raw_status}/{detail}",
+            output=output,
+        )
+
+    @staticmethod
+    def _map_state(status: str, detail: str | None) -> RemoteRunState:
+        """Map Devin v3 status and status_detail to a lifecycle state.
+
+        A v3 session that has finished its work usually remains ``running`` with
+        ``status_detail`` ``finished`` rather than moving to ``exit``; a session waiting on a
+        person reports ``waiting_for_user`` or ``waiting_for_approval``.
+        """
+
+        if status == "running" and detail == "finished":
+            return RemoteRunState.SUCCEEDED
+        if status == "running" and detail in {"waiting_for_user", "waiting_for_approval"}:
+            return RemoteRunState.AWAITING_INPUT
         mapping = {
             "new": RemoteRunState.QUEUED,
             "queued": RemoteRunState.QUEUED,
@@ -121,14 +172,7 @@ class DevinRuntime:
             "error": RemoteRunState.FAILED,
             "terminated": RemoteRunState.CANCELLED,
         }
-        return RemoteAgentStatus(
-            handle=handle,
-            state=mapping.get(raw_status, RemoteRunState.UNKNOWN),
-            raw_status=raw_status,
-            # This adapter is lifecycle-only. Provider prose, PR claims, and arbitrary
-            # nested fields are not trusted implementation or validation evidence.
-            output={"session_id": handle.remote_id, "status": raw_status},
-        )
+        return mapping.get(status, RemoteRunState.UNKNOWN)
 
     def cancel(self, handle: RemoteAgentHandle) -> bool:
         self._validate_handle(handle)
@@ -156,6 +200,8 @@ class DevinRuntime:
 
     @staticmethod
     def _json(response: httpx.Response) -> dict[str, Any]:
+        if len(response.content) > 1_048_576:
+            raise IntegrationResponseError("Devin returned an oversized response")
         try:
             body = response.json()
         except ValueError as exc:

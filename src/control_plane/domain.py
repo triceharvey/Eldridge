@@ -59,6 +59,7 @@ class AgentRole(StrEnum):
     AUDITOR = "AUDITOR"
     IDE_INTEGRATION = "IDE_INTEGRATION"
     CI_INTEGRATION = "CI_INTEGRATION"
+    REMOTE_AGENT_INTEGRATION = "REMOTE_AGENT_INTEGRATION"
 
 
 class Capability(StrEnum):
@@ -100,6 +101,7 @@ class Capability(StrEnum):
     PLAN_EVALUATION_REPAIR = "PLAN_EVALUATION_REPAIR"
     RECOVER_EVALUATION = "RECOVER_EVALUATION"
     PROMOTE_EVALUATION = "PROMOTE_EVALUATION"
+    DISPATCH_REMOTE_AGENT = "DISPATCH_REMOTE_AGENT"
 
 
 class ApprovalAction(StrEnum):
@@ -231,6 +233,7 @@ ROLE_CAPABILITIES: dict[AgentRole, frozenset[Capability]] = {
             Capability.PLAN_EVALUATION_REPAIR,
             Capability.RECOVER_EVALUATION,
             Capability.PROMOTE_EVALUATION,
+            Capability.DISPATCH_REMOTE_AGENT,
         }
     ),
     AgentRole.AUDITOR: frozenset(
@@ -249,6 +252,8 @@ ROLE_CAPABILITIES: dict[AgentRole, frozenset[Capability]] = {
         }
     ),
     AgentRole.CI_INTEGRATION: frozenset({Capability.SUBMIT_CI_EVIDENCE}),
+    # Remote agents never call the control plane; the identity only attributes their attempts.
+    AgentRole.REMOTE_AGENT_INTEGRATION: frozenset(),
 }
 
 

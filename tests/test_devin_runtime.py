@@ -199,6 +199,48 @@ def test_devin_poll_rejects_non_string_status(bad_status: object) -> None:
         runtime.poll(RemoteAgentHandle(provider="devin", remote_id="devin-123", url=None))
 
 
+@pytest.mark.parametrize("bad_detail", [1, {}, "", "x" * 65])
+def test_devin_poll_rejects_invalid_status_detail(bad_detail: object) -> None:
+    runtime = _runtime(
+        httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "session_id": "devin-123",
+                    "status": "running",
+                    "status_detail": bad_detail,
+                },
+            )
+        )
+    )
+    with pytest.raises(IntegrationResponseError, match="status detail"):
+        runtime.poll(RemoteAgentHandle(provider="devin", remote_id="devin-123", url=None))
+
+
+def test_devin_poll_rejects_oversized_structured_output() -> None:
+    runtime = _runtime(
+        httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "session_id": "devin-123",
+                    "status": "running",
+                    "status_detail": "finished",
+                    "structured_output": {"summary": "x" * 16_385},
+                },
+            )
+        )
+    )
+    with pytest.raises(IntegrationResponseError, match="too large"):
+        runtime.poll(RemoteAgentHandle(provider="devin", remote_id="devin-123", url=None))
+
+
+def test_devin_rejects_oversized_response_before_json_parsing() -> None:
+    runtime = _runtime(httpx.MockTransport(lambda _: httpx.Response(200, text="x" * 1_048_577)))
+    with pytest.raises(IntegrationResponseError, match="oversized"):
+        runtime.submit(_request())
+
+
 @pytest.mark.parametrize(
     ("agent_request", "error"),
     [
