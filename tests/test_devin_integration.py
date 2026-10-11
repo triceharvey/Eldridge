@@ -490,3 +490,70 @@ def test_registry_validates_remote_agent_repository(tmp_path: Path) -> None:
         registry.fetch_remote_agent_branch("s", remote_branch="-x", local_branch="devin/task-1")
     with pytest.raises(WorkspaceError, match="local handoff branch is invalid"):
         registry.fetch_remote_agent_branch("s", remote_branch="ok", local_branch="main")
+
+
+def test_prepare_stops_at_the_implementation_task(devin_fixture: Fixture) -> None:
+    from control_plane.devin_cli import prepare_for_devin
+
+    result = prepare_for_devin(
+        devin_fixture.service,
+        principal="dev-operator",
+        title="Prepare for Devin",
+        objective="Fix the corridor deadlock with a deterministic regression test.",
+        repository_scope=SLUG,
+        idempotency_key="devin-prepare-key",
+        risk="LOW",
+        data_classification="INTERNAL",
+        max_stage_leases=8,
+    )
+    assert result["ready_for_devin"] is True
+    assert result["state"] == "IMPLEMENTING"
+    dispatched = devin_fixture.service.dispatch_devin_task(
+        task_id=str(result["implementation_task_id"]),
+        principal_id="dev-operator",
+        max_cost_units=1,
+    )
+    assert dispatched["remote"]["session_id"] == "devin-abc123"
+
+
+def test_devin_cli_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    from control_plane.cli import main
+    from control_plane.config import get_settings
+    from control_plane.persistence import initialize_database, make_engine
+
+    database_url = f"sqlite:///{tmp_path / 'cli.db'}"
+    engine = make_engine(database_url)
+    initialize_database(engine)
+    engine.dispose()
+    monkeypatch.setenv("CONTROL_PLANE_DATABASE_URL", database_url)
+    monkeypatch.setenv("CONTROL_PLANE_WORKTREE_ROOT", str(tmp_path / "worktrees"))
+    get_settings.cache_clear()
+
+    def run(*argv: str) -> object:
+        monkeypatch.setattr(sys, "argv", ["control-plane", "devin", *argv])
+        with pytest.raises(SystemExit) as exit_info:
+            main()
+        return exit_info.value.code
+
+    try:
+        prepared = run(
+            "prepare",
+            "--title",
+            "CLI prepare",
+            "--objective",
+            "Exercise the Devin CLI without a repository scope registration.",
+            "--repository-scope",
+            "unregistered/repository",
+            "--idempotency-key",
+            "devin-cli-prepare",
+        )
+        assert prepared in {0, 2}
+        assert "not activated" in str(
+            run("dispatch", "--task-id", "missing", "--max-cost-units", "1")
+        )
+        assert "not activated" in str(run("sync", "--task-id", "missing"))
+        assert "not activated" in str(run("cancel", "--task-id", "missing"))
+    finally:
+        get_settings.cache_clear()

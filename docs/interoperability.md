@@ -25,7 +25,9 @@ Activation requires a Devin organization ID and a service user restricted to the
 
 ### Devin sessions
 
-The flow has three human-only calls, each requiring `DISPATCH_REMOTE_AGENT`:
+The [Devin operator runbook](devin-runbook.md) gives the end-to-end steps, including the
+`control-plane devin prepare|dispatch|sync|cancel` commands. The API has three human-only calls,
+each requiring `DISPATCH_REMOTE_AGENT`:
 
 ```sh
 curl -X POST "$API/tasks/$TASK/devin/dispatch" -H 'content-type: application/json' \
